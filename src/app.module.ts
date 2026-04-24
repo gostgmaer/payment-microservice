@@ -33,6 +33,7 @@ import { LedgerModule } from './modules/ledger/ledger.module';
 // Business domain
 import { BillingModule } from './modules/billing/billing.module';
 import { SubscriptionModule } from './modules/subscription/subscription.module';
+import { AdminModule } from './modules/admin/admin.module';
 
 // Common
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
@@ -114,6 +115,7 @@ const conditionalModules = bullmqEnabled ? [EventsModule] : [];
     // ── Business domain ─────────────────────────────────────────────────
     BillingModule,
     SubscriptionModule,
+    AdminModule,
   ],
 
   providers: [

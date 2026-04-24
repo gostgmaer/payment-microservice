@@ -19,6 +19,8 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { ApiKeyGuard } from '../../common/guards/api-key.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtPayload } from '../security/strategies/jwt.strategy';
+import { RequirePermission } from '../../common/decorators/require-permission.decorator';
+import { Permission } from '../../common/rbac/permissions';
 import { SubscriptionService } from './subscription.service';
 import { PlanService } from './plan.service';
 
@@ -62,12 +64,14 @@ export class SubscriptionController {
   }
 
   @Get('plans')
+  @RequirePermission(Permission.PLAN_READ)
   @ApiOperation({ summary: 'List available subscription plans' })
   async listPlans(@Query('includeInactive') includeInactive?: string) {
     return this.planService.findAll(includeInactive !== 'true');
   }
 
   @Get('plans/:id')
+  @RequirePermission(Permission.PLAN_READ)
   @ApiOperation({ summary: 'Get plan details' })
   async getPlan(@Param('id', ParseUUIDPipe) id: string) {
     return this.planService.findById(id);
@@ -86,6 +90,7 @@ export class SubscriptionController {
   @Post()
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
+  @RequirePermission(Permission.SUBSCRIPTION_WRITE)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Subscribe to a plan' })
   async createSubscription(
@@ -103,6 +108,7 @@ export class SubscriptionController {
   @Get()
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
+  @RequirePermission(Permission.SUBSCRIPTION_READ)
   @ApiOperation({ summary: 'List subscriptions for current customer' })
   async listSubscriptions(
     @CurrentUser() user: JwtPayload,
@@ -115,6 +121,7 @@ export class SubscriptionController {
   @Get(':id')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
+  @RequirePermission(Permission.SUBSCRIPTION_READ)
   @ApiOperation({ summary: 'Get subscription details' })
   async getSubscription(@Param('id', ParseUUIDPipe) id: string) {
     return this.subscriptionService.findById(id);
@@ -123,6 +130,7 @@ export class SubscriptionController {
   @Delete(':id')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
+  @RequirePermission(Permission.SUBSCRIPTION_CANCEL)
   @ApiOperation({ summary: 'Cancel a subscription' })
   async cancelSubscription(
     @Param('id', ParseUUIDPipe) id: string,

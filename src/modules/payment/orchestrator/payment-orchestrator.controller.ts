@@ -22,6 +22,8 @@ import { Provider } from '@prisma/client';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { JwtPayload } from '../../security/strategies/jwt.strategy';
+import { RequirePermission } from '../../../common/decorators/require-permission.decorator';
+import { Permission } from '../../../common/rbac/permissions';
 import { PaymentOrchestratorService } from './payment-orchestrator.service';
 import { TransactionService } from '../transaction/transaction.service';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -98,6 +100,7 @@ export class PaymentOrchestratorController {
    * Frontend uses these options to render the payment UI.
    */
   @Post('initiate')
+  @RequirePermission(Permission.PAYMENT_WRITE)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Initiate a payment (creates transaction + provider options)' })
   @ApiResponse({ status: 201, description: 'Payment initiated successfully' })
@@ -124,6 +127,7 @@ export class PaymentOrchestratorController {
    * For Stripe, verification is handled automatically via webhooks.
    */
   @Post(':transactionId/verify')
+  @RequirePermission(Permission.PAYMENT_WRITE)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Verify a payment attempt server-side' })
   async verifyPayment(
@@ -142,6 +146,7 @@ export class PaymentOrchestratorController {
 
   /** Retrieve a transaction with its attempts. */
   @Get(':transactionId')
+  @RequirePermission(Permission.PAYMENT_READ)
   @ApiOperation({ summary: 'Get transaction details' })
   async getTransaction(
     @Param('transactionId', ParseUUIDPipe) transactionId: string,
@@ -151,6 +156,7 @@ export class PaymentOrchestratorController {
 
   /** List all transactions for the authenticated customer. */
   @Get()
+  @RequirePermission(Permission.PAYMENT_READ)
   @ApiOperation({ summary: 'List transactions for current customer' })
   async listTransactions(
     @CurrentUser() user: JwtPayload,

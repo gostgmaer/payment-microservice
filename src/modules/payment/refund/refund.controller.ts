@@ -16,6 +16,8 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { JwtPayload } from '../../security/strategies/jwt.strategy';
+import { RequirePermission } from '../../../common/decorators/require-permission.decorator';
+import { Permission } from '../../../common/rbac/permissions';
 import { RefundService } from './refund.service';
 
 export class CreateRefundDto {
@@ -43,6 +45,7 @@ export class RefundController {
   constructor(private readonly refundService: RefundService) {}
 
   @Post()
+  @RequirePermission(Permission.REFUND_WRITE)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Initiate a refund for a transaction' })
   async createRefund(
@@ -60,6 +63,7 @@ export class RefundController {
   }
 
   @Get()
+  @RequirePermission(Permission.REFUND_READ)
   @ApiOperation({ summary: 'List refunds for a transaction' })
   async listRefunds(
     @Param('transactionId', ParseUUIDPipe) transactionId: string,
