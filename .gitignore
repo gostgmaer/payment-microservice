@@ -11,3 +11,9 @@ npm-debug.log*
 .vscode/
 *.iml
 prisma/migrations/
+
+# Stray compiled output — should only exist in dist/
+src/**/*.js
+src/**/*.js.map
+src/**/*.d.ts
+*.tsbuildinfo
