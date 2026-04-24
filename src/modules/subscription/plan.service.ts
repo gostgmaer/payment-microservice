@@ -1,0 +1,53 @@
+/**
+ * PlanService — CRUD for subscription plans.
+ * Plans are created by admins (API key auth) and consumed by subscription logic.
+ */
+
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Prisma, Plan } from '@prisma/client';
+import { PrismaService } from '../../prisma/prisma.service';
+import { ERROR_CODES } from '../../common/constants/error-codes.constant';
+
+export interface CreatePlanDto {
+  name: string;
+  description?: string;
+  amount: bigint;
+  currency: string;
+  interval: 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
+  intervalCount?: number;
+  trialDays?: number;
+  metadata?: Record<string, unknown>;
+}
+
+@Injectable()
+export class PlanService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async create(dto: CreatePlanDto): Promise<Plan> {
+    return this.prisma.plan.create({
+      data: {
+        ...dto,
+        intervalCount: dto.intervalCount ?? 1,
+        trialDays: dto.trialDays ?? 0,
+        metadata: (dto.metadata as Prisma.JsonObject) ?? Prisma.JsonNull,
+      },
+    });
+  }
+
+  async findAll(onlyActive = true): Promise<Plan[]> {
+    return this.prisma.plan.findMany({
+      where: onlyActive ? { isActive: true } : undefined,
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async findById(id: string): Promise<Plan> {
+    const plan = await this.prisma.plan.findUnique({ where: { id } });
+    if (!plan) throw new NotFoundException({ message: 'Plan not found', errorCode: ERROR_CODES.PLAN_NOT_FOUND });
+    return plan;
+  }
+
+  async deactivate(id: string): Promise<Plan> {
+    return this.prisma.plan.update({ where: { id }, data: { isActive: false } });
+  }
+}

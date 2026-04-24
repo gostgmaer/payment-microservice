@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.git/
+.env
+.env.*
+!.env.example
+coverage/
+*.log
+.DS_Store
+README.md
+docker-compose*.yml
+.github/
+test/
+**/*.spec.ts
+**/*.test.ts
+prisma/migrations/
