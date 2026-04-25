@@ -10,12 +10,7 @@
  *  - Concurrent attempt updates use SELECT … FOR UPDATE.
  */
 
-import {
-  Injectable,
-  NotFoundException,
-  ConflictException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, Logger } from '@nestjs/common';
 import { Prisma, PaymentAttempt, AttemptStatus, Provider } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AppConfigService } from '../../config/app-config.service';
@@ -43,9 +38,7 @@ export class PaymentAttemptService {
   ) {}
 
   async create(dto: CreateAttemptDto): Promise<PaymentAttempt> {
-    const expiresAt = dayjs()
-      .add(this.config.attemptExpiryMinutes, 'minute')
-      .toDate();
+    const expiresAt = dayjs().add(this.config.attemptExpiryMinutes, 'minute').toDate();
 
     return this.prisma.paymentAttempt.create({
       data: {
@@ -65,7 +58,11 @@ export class PaymentAttemptService {
 
   async findById(id: string): Promise<PaymentAttempt> {
     const attempt = await this.prisma.paymentAttempt.findUnique({ where: { id } });
-    if (!attempt) throw new NotFoundException({ message: 'Payment attempt not found', errorCode: ERROR_CODES.PAYMENT_NOT_FOUND });
+    if (!attempt)
+      throw new NotFoundException({
+        message: 'Payment attempt not found',
+        errorCode: ERROR_CODES.PAYMENT_NOT_FOUND,
+      });
     return attempt;
   }
 
@@ -93,10 +90,7 @@ export class PaymentAttemptService {
    * This is the application-level guard; the DB partial unique index is the
    * final backstop.
    */
-  async markSuccess(
-    id: string,
-    tx: Prisma.TransactionClient,
-  ): Promise<PaymentAttempt> {
+  async markSuccess(id: string, tx: Prisma.TransactionClient): Promise<PaymentAttempt> {
     // Lock row for update
     await tx.$executeRaw`SELECT id FROM "PaymentAttempt" WHERE id = ${id} FOR UPDATE`;
 
@@ -124,7 +118,11 @@ export class PaymentAttemptService {
     });
   }
 
-  async markFailed(id: string, reason: string, tx?: Prisma.TransactionClient): Promise<PaymentAttempt> {
+  async markFailed(
+    id: string,
+    reason: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<PaymentAttempt> {
     const client = tx ?? this.prisma;
     return client.paymentAttempt.update({
       where: { id },

@@ -97,13 +97,20 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
   private statusToErrorCode(status: number): string {
     switch (status) {
-      case HttpStatus.NOT_FOUND:      return ERROR_CODES.NOT_FOUND;
-      case HttpStatus.UNAUTHORIZED:   return ERROR_CODES.UNAUTHORIZED;
-      case HttpStatus.FORBIDDEN:      return ERROR_CODES.FORBIDDEN;
-      case HttpStatus.CONFLICT:       return ERROR_CODES.CONFLICT;
-      case HttpStatus.TOO_MANY_REQUESTS: return ERROR_CODES.RATE_LIMITED;
-      case HttpStatus.UNPROCESSABLE_ENTITY: return ERROR_CODES.VALIDATION_ERROR;
-      default:                        return ERROR_CODES.INTERNAL_ERROR;
+      case HttpStatus.NOT_FOUND:
+        return ERROR_CODES.NOT_FOUND;
+      case HttpStatus.UNAUTHORIZED:
+        return ERROR_CODES.UNAUTHORIZED;
+      case HttpStatus.FORBIDDEN:
+        return ERROR_CODES.FORBIDDEN;
+      case HttpStatus.CONFLICT:
+        return ERROR_CODES.CONFLICT;
+      case HttpStatus.TOO_MANY_REQUESTS:
+        return ERROR_CODES.RATE_LIMITED;
+      case HttpStatus.UNPROCESSABLE_ENTITY:
+        return ERROR_CODES.VALIDATION_ERROR;
+      default:
+        return ERROR_CODES.INTERNAL_ERROR;
     }
   }
 }

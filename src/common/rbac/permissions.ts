@@ -23,36 +23,36 @@
 
 export const Permission = {
   // ── Payment ────────────────────────────────────────────────────────────
-  PAYMENT_READ:    'payment:read',
-  PAYMENT_WRITE:   'payment:write',
+  PAYMENT_READ: 'payment:read',
+  PAYMENT_WRITE: 'payment:write',
 
   // ── Refund ─────────────────────────────────────────────────────────────
-  REFUND_READ:     'refund:read',
-  REFUND_WRITE:    'refund:write',
+  REFUND_READ: 'refund:read',
+  REFUND_WRITE: 'refund:write',
 
   // ── Invoice ────────────────────────────────────────────────────────────
-  INVOICE_READ:    'invoice:read',
-  INVOICE_WRITE:   'invoice:write',
-  INVOICE_VOID:    'invoice:void',
+  INVOICE_READ: 'invoice:read',
+  INVOICE_WRITE: 'invoice:write',
+  INVOICE_VOID: 'invoice:void',
 
   // ── Subscription ───────────────────────────────────────────────────────
-  SUBSCRIPTION_READ:   'subscription:read',
-  SUBSCRIPTION_WRITE:  'subscription:write',
+  SUBSCRIPTION_READ: 'subscription:read',
+  SUBSCRIPTION_WRITE: 'subscription:write',
   SUBSCRIPTION_CANCEL: 'subscription:cancel',
 
   // ── Plan ───────────────────────────────────────────────────────────────
-  PLAN_READ:    'plan:read',
-  PLAN_MANAGE:  'plan:manage',   // create + deactivate
+  PLAN_READ: 'plan:read',
+  PLAN_MANAGE: 'plan:manage', // create + deactivate
 
   // ── Admin (cross-customer) ─────────────────────────────────────────────
-  ADMIN_DASHBOARD:     'admin:dashboard',
-  ADMIN_TRANSACTIONS:  'admin:transactions',
-  ADMIN_REFUNDS:       'admin:refunds',
-  ADMIN_INVOICES:      'admin:invoices',
+  ADMIN_DASHBOARD: 'admin:dashboard',
+  ADMIN_TRANSACTIONS: 'admin:transactions',
+  ADMIN_REFUNDS: 'admin:refunds',
+  ADMIN_INVOICES: 'admin:invoices',
   ADMIN_SUBSCRIPTIONS: 'admin:subscriptions',
-  ADMIN_WEBHOOKS:      'admin:webhooks',
-  ADMIN_AUDIT:         'admin:audit',
-  ADMIN_LEDGER:        'admin:ledger',
+  ADMIN_WEBHOOKS: 'admin:webhooks',
+  ADMIN_AUDIT: 'admin:audit',
+  ADMIN_LEDGER: 'admin:ledger',
 } as const;
 
 export type Permission = (typeof Permission)[keyof typeof Permission];

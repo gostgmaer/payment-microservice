@@ -15,7 +15,7 @@ const CURRENCY_EXPONENTS: Record<string, number> = {
   USD: 2,
   EUR: 2,
   GBP: 2,
-  JPY: 0,  // Yen has no minor unit
+  JPY: 0, // Yen has no minor unit
   SGD: 2,
 };
 

@@ -78,7 +78,10 @@ export class IdempotencyInterceptor implements NestInterceptor {
     const acquired = await this.redis.set(lockKey, '1', 'EX', 30, 'NX');
     if (!acquired) {
       throw new HttpException(
-        { message: 'A request with this idempotency key is currently processing', errorCode: 'IDEMPOTENCY_CONFLICT' },
+        {
+          message: 'A request with this idempotency key is currently processing',
+          errorCode: 'IDEMPOTENCY_CONFLICT',
+        },
         HttpStatus.CONFLICT,
       );
     }
@@ -100,7 +103,11 @@ export class IdempotencyInterceptor implements NestInterceptor {
           if (err instanceof HttpException && err.getStatus() < 500) {
             await this.redis.set(
               redisKey,
-              JSON.stringify({ __isError: true, body: err.getResponse(), statusCode: err.getStatus() }),
+              JSON.stringify({
+                __isError: true,
+                body: err.getResponse(),
+                statusCode: err.getStatus(),
+              }),
               'EX',
               300, // shorter TTL for client errors
             );
