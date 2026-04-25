@@ -47,8 +47,10 @@ export interface PaymentOption {
   method: string;
   /** Razorpay: orderId to pass to Checkout SDK */
   orderId?: string;
-  /** Stripe: client_secret to pass to stripe.confirmPayment() */
+  /** Stripe Payment Intent: client_secret to pass to stripe.confirmPayment() */
   clientSecret?: string;
+  /** Stripe Checkout Session: hosted payment page URL (redirect flow) */
+  sessionUrl?: string;
   attemptId: string;
 }
 
@@ -154,6 +156,7 @@ export class PaymentOrchestratorService {
           method: providerResult.method,
           orderId: providerName === Provider.RAZORPAY ? providerResult.providerOrderId : undefined,
           clientSecret: providerName === Provider.STRIPE ? providerResult.clientSecret : undefined,
+          sessionUrl: providerName === Provider.STRIPE ? providerResult.sessionUrl : undefined,
           attemptId: attempt.id,
         });
       } catch (err) {

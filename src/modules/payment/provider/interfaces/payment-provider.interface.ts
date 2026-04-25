@@ -33,6 +33,11 @@ export interface ProviderPaymentResponse {
    * For Razorpay: undefined (order ID is used directly).
    */
   clientSecret?: string;
+  /**
+   * For Stripe Checkout Session flow: the hosted payment page URL.
+   * Populated when checkoutMode metadata flag is set to true.
+   */
+  sessionUrl?: string;
   /** Provider enum */
   provider: Provider;
   /** Payment method hint for the response */

@@ -17,6 +17,7 @@ import { AppConfigService } from '../config/app-config.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { ApiKeyGuard } from '../../common/guards/api-key.guard';
+import { ServiceOrJwtGuard } from '../../common/guards/service-or-jwt.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { TenantGuard } from '../../common/guards/tenant.guard';
@@ -40,6 +41,7 @@ import { REDIS_CLIENT } from '../../common/interceptors/idempotency.interceptor'
     JwtStrategy,
     JwtAuthGuard,
     ApiKeyGuard,
+    ServiceOrJwtGuard,
     RolesGuard,
     PermissionsGuard,
     TenantGuard,
@@ -71,6 +73,7 @@ import { REDIS_CLIENT } from '../../common/interceptors/idempotency.interceptor'
     JwtModule,
     JwtAuthGuard,
     ApiKeyGuard,
+    ServiceOrJwtGuard,
     RolesGuard,
     PermissionsGuard,
     TenantGuard,

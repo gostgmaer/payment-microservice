@@ -45,6 +45,15 @@ export class StripeProvider implements IPaymentProvider {
   }
 
   async createPayment(input: CreatePaymentInput): Promise<ProviderPaymentResponse> {
+    // ── Checkout Session flow (redirect to Stripe-hosted page) ────────────
+    // Triggered when metadata.checkoutMode === true is passed by the caller
+    // (e.g. web-agency-backend-api checkout adapter). Requires successUrl and
+    // cancelUrl to be present in metadata.
+    if (input.metadata?.checkoutMode === true) {
+      return this.createCheckoutSession(input);
+    }
+
+    // ── Standard Payment Intent flow (embedded Stripe.js / Elements) ──────
     this.logger.log(`Creating Stripe PaymentIntent for transaction ${input.transactionId}`);
 
     // Amount must be integer (Stripe always expects smallest currency unit)
@@ -75,7 +84,83 @@ export class StripeProvider implements IPaymentProvider {
     };
   }
 
+  /**
+   * Create a Stripe Checkout Session (hosted redirect payment page).
+   * Invoked when metadata.checkoutMode === true.
+   */
+  private async createCheckoutSession(input: CreatePaymentInput): Promise<ProviderPaymentResponse> {
+    this.logger.log(`Creating Stripe Checkout Session for transaction ${input.transactionId}`);
+
+    const successUrl = String(input.metadata?.successUrl ?? '');
+    const cancelUrl = String(input.metadata?.cancelUrl ?? '');
+    const customerEmail = String(input.metadata?.customerEmail ?? '');
+    const productName = String(input.metadata?.productName ?? 'Product');
+
+    if (!successUrl || !cancelUrl) {
+      throw new Error('Stripe Checkout Session requires successUrl and cancelUrl in metadata');
+    }
+
+    const session = await this.stripe.checkout.sessions.create(
+      {
+        mode: 'payment',
+        payment_method_types: ['card'],
+        line_items: [
+          {
+            price_data: {
+              currency: input.currency.toLowerCase(),
+              unit_amount: Number(input.amount),
+              product_data: { name: productName },
+            },
+            quantity: 1,
+          },
+        ],
+        success_url: successUrl,
+        cancel_url: cancelUrl,
+        ...(customerEmail ? { customer_email: customerEmail } : {}),
+        metadata: {
+          transactionId: input.transactionId,
+          customerId: input.customerId,
+          idempotencyKey: input.idempotencyKey,
+        },
+      },
+      { idempotencyKey: input.idempotencyKey },
+    );
+
+    return {
+      providerOrderId: session.id,
+      sessionUrl: session.url ?? undefined,
+      provider: Provider.STRIPE,
+      method: 'checkout',
+      metadata: { sessionId: session.id },
+    };
+  }
+
   async verifyPayment(input: VerifyPaymentInput): Promise<VerifyPaymentResult> {
+    // ── Checkout Session verification ─────────────────────────────────────
+    // Stripe session IDs start with 'cs_'
+    if (input.providerOrderId.startsWith('cs_')) {
+      this.logger.log(`Verifying Stripe Checkout Session ${input.providerOrderId}`);
+      try {
+        const session = await this.stripe.checkout.sessions.retrieve(input.providerOrderId);
+        if (session.payment_status === 'paid') {
+          return {
+            isSuccess: true,
+            metadata: {
+              sessionId: session.id,
+              paymentIntentId: String(session.payment_intent ?? ''),
+            },
+          };
+        }
+        return {
+          isSuccess: false,
+          failureReason: `Checkout Session payment_status: ${session.payment_status}`,
+        };
+      } catch (err) {
+        return { isSuccess: false, failureReason: (err as Error).message };
+      }
+    }
+
+    // ── Standard PaymentIntent verification ───────────────────────────────
     this.logger.log(`Verifying Stripe PaymentIntent ${input.providerOrderId}`);
 
     const paymentIntent = await this.stripe.paymentIntents.retrieve(input.providerOrderId);

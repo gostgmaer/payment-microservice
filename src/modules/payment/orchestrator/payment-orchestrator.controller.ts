@@ -15,6 +15,7 @@ import { IsString, IsNumber, IsOptional, IsArray, IsEnum, Min } from 'class-vali
 import { Type } from 'class-transformer';
 import { Provider } from '@prisma/client';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
+import { ServiceOrJwtGuard } from '../../../common/guards/service-or-jwt.guard';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { CurrentTenant } from '../../../common/decorators/current-tenant.decorator';
 import { JwtPayload } from '../../security/strategies/jwt.strategy';
@@ -85,7 +86,7 @@ export class VerifyPaymentRequestDto {
 
 @ApiTags('Payment')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(ServiceOrJwtGuard)
 @Controller('payments')
 export class PaymentOrchestratorController {
   constructor(
