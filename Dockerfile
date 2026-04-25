@@ -1,42 +1,59 @@
 # ═══════════════════════════════════════════════════════════════════════════
-# Multi-stage build for production-grade NestJS Payment Microservice
+# Multi-stage build — NestJS Payment Microservice
+# Package manager: pnpm (via corepack, built into Node.js 16.10+)
 # ═══════════════════════════════════════════════════════════════════════════
 
-# ── Stage 1: Install dependencies ──────────────────────────────────────────
-FROM node:20-alpine AS deps
+# ── Stage 1: Install + Build ────────────────────────────────────────────────
+FROM node:20-alpine AS builder
 
+# openssl — Prisma engine target: linux-musl-openssl-3.0.x (Alpine)
+# dumb-init — PID-1 signal handling in runner
 RUN for i in 1 2 3; do \
-    apk add --no-cache dumb-init && break || \
+    apk add --no-cache dumb-init openssl && break || \
     (echo "apk attempt $i failed, retrying..." && sleep 5); \
   done
 
+# Enable corepack (ships with Node 16.10+) and activate pnpm@9.
+# corepack enable creates shims; corepack prepare downloads + pins the version.
+RUN corepack enable && \
+    for i in 1 2 3; do \
+      corepack prepare pnpm@9 --activate && break || \
+      (echo "corepack prepare attempt $i failed, retrying..." && sleep 3); \
+    done && pnpm --version
+
 WORKDIR /app
 
-COPY package*.json ./
+# Disable hardware AES-NI — fixes ERR_SSL_CIPHER_OPERATION_FAILED inside
+# Docker Desktop / WSL2 virtualized environments.
+ENV OPENSSL_ia32cap="~0x200000200000000"
+ENV CHECKPOINT_DISABLE=1
+
+# Copy manifests first for layer-cache efficiency.
+# Run `pnpm install` locally once to generate pnpm-lock.yaml and commit it.
+COPY package.json ./
 COPY prisma ./prisma/
 
-# npm install (not ci) to tolerate lockfile version differences
-# Retry loop handles Docker Desktop TLS cipher failures on large downloads
+# Install all deps (dev + prod). pnpm postinstall scripts download the
+# @prisma/engines query engine binary for linux-musl-openssl-3.0.x (Alpine).
+# Retry loop handles Docker Desktop TLS cipher failures on large downloads.
 RUN for i in 1 2 3 4 5; do \
-    npm install && break || \
-    (echo "npm install attempt $i failed, retrying in 10s..." && sleep 10); \
+    pnpm install --no-frozen-lockfile && break || \
+    (echo "pnpm install attempt $i failed, retrying in 10s..." && sleep 10); \
   done
 
-# Generate Prisma client
-RUN ./node_modules/.bin/prisma generate
+# Generate Prisma TypeScript client against the downloaded engine binary.
+RUN for i in 1 2 3; do \
+    ./node_modules/.bin/prisma generate && break || \
+    (echo "prisma generate attempt $i failed, retrying in 5s..." && sleep 5); \
+  done
 
-
-# ── Stage 2: Build ─────────────────────────────────────────────────────────
-FROM node:20-alpine AS builder
-
-WORKDIR /app
-
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/prisma ./prisma
-
+# Copy source and compile.
 COPY . .
+RUN pnpm run build
 
-RUN npm run build
+# Strip dev deps — removes typescript, @nestjs/cli, jest, eslint, @types/*, etc.
+# prisma CLI remains because it is listed in dependencies (needed for migrate deploy).
+RUN pnpm prune --prod
 
 
 # ── Stage 3: Production runner ─────────────────────────────────────────────
@@ -53,16 +70,18 @@ RUN addgroup --system --gid 1001 nodejs \
 WORKDIR /app
 
 # Use --chown on COPY to avoid a slow `chown -R` on node_modules
-COPY --from=deps    --chown=nestjs:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=nestjs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nestjs:nodejs /app/dist         ./dist
 COPY --from=builder --chown=nestjs:nodejs /app/prisma       ./prisma
 COPY --chown=nestjs:nodejs package.json ./
 
 USER nestjs
 
-EXPOSE 3000
+ENV CHECKPOINT_DISABLE=1
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+EXPOSE 4000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/v1/health || exit 1
 
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]

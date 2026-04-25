@@ -34,14 +34,20 @@ export default () => ({
     secretKey: process.env.STRIPE_SECRET_KEY,
     webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
     apiVersion: process.env.STRIPE_API_VERSION ?? '2024-04-10',
-    enabled: process.env.STRIPE_ENABLED !== 'false',
+    enabled: process.env.STRIPE_ENABLED === 'true',
   },
 
   razorpay: {
     keyId: process.env.RAZORPAY_KEY_ID,
     keySecret: process.env.RAZORPAY_KEY_SECRET,
     webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET,
-    enabled: process.env.RAZORPAY_ENABLED !== 'false',
+    enabled: process.env.RAZORPAY_ENABLED === 'true',
+  },
+
+  cash: {
+    // Auto-enabled when both Stripe and Razorpay are disabled.
+    // Explicitly set CASH_ENABLED=true to force-enable alongside other providers.
+    enabled: process.env.CASH_ENABLED === 'true',
   },
 
   payment: {

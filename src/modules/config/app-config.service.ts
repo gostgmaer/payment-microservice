@@ -58,7 +58,7 @@ export class AppConfigService {
     return this.config.get('stripe.apiVersion', '2024-04-10');
   }
   get stripeEnabled(): boolean {
-    return this.config.get<boolean>('stripe.enabled', true);
+    return this.config.get<boolean>('stripe.enabled', false);
   }
 
   // ── Razorpay ─────────────────────────────────────────────────────────────
@@ -72,7 +72,12 @@ export class AppConfigService {
     return this.config.getOrThrow<string>('razorpay.webhookSecret');
   }
   get razorpayEnabled(): boolean {
-    return this.config.get<boolean>('razorpay.enabled', true);
+    return this.config.get<boolean>('razorpay.enabled', false);
+  }
+
+  // ── Cash ─────────────────────────────────────────────────────────────────
+  get cashEnabled(): boolean {
+    return this.config.get<boolean>('cash.enabled', false);
   }
 
   // ── Payment ──────────────────────────────────────────────────────────────

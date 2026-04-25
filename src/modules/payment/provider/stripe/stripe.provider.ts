@@ -34,14 +34,17 @@ export class StripeProvider implements IPaymentProvider {
   private readonly logger = new Logger(StripeProvider.name);
 
   constructor(private readonly config: AppConfigService) {
-    this.stripe = new Stripe(config.stripeSecretKey, {
-      // Pin the API version to prevent unexpected breaking changes
-      apiVersion: config.stripeApiVersion as Stripe.LatestApiVersion,
-      typescript: true,
-      maxNetworkRetries: 2,
-      timeout: 10_000,
-      telemetry: false, // disable telemetry in financial systems
-    });
+    // Only instantiate SDK when Stripe is enabled; guards against empty credentials.
+    if (config.stripeEnabled) {
+      this.stripe = new Stripe(config.stripeSecretKey, {
+        // Pin the API version to prevent unexpected breaking changes
+        apiVersion: config.stripeApiVersion as Stripe.LatestApiVersion,
+        typescript: true,
+        maxNetworkRetries: 2,
+        timeout: 10_000,
+        telemetry: false, // disable telemetry in financial systems
+      });
+    }
   }
 
   async createPayment(input: CreatePaymentInput): Promise<ProviderPaymentResponse> {

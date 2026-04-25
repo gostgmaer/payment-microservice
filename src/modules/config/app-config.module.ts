@@ -23,26 +23,34 @@ import { AppConfigService } from './app-config.service';
         REDIS_HOST: Joi.string().default('localhost'),
         REDIS_PORT: Joi.number().default(6379),
         JWT_SECRET: Joi.string().min(32).required(),
-        STRIPE_SECRET_KEY: Joi.string().when('STRIPE_ENABLED', {
+        STRIPE_ENABLED: Joi.string().valid('true', 'false').default('false'),
+        STRIPE_SECRET_KEY: Joi.when('STRIPE_ENABLED', {
           is: 'true',
-          then: Joi.required(),
+          then: Joi.string().min(1).required(),
+          otherwise: Joi.string().allow('').optional(),
         }),
-        STRIPE_WEBHOOK_SECRET: Joi.string().when('STRIPE_ENABLED', {
+        STRIPE_WEBHOOK_SECRET: Joi.when('STRIPE_ENABLED', {
           is: 'true',
-          then: Joi.required(),
+          then: Joi.string().min(1).required(),
+          otherwise: Joi.string().allow('').optional(),
         }),
-        RAZORPAY_KEY_ID: Joi.string().when('RAZORPAY_ENABLED', {
+        RAZORPAY_ENABLED: Joi.string().valid('true', 'false').default('false'),
+        RAZORPAY_KEY_ID: Joi.when('RAZORPAY_ENABLED', {
           is: 'true',
-          then: Joi.required(),
+          then: Joi.string().min(1).required(),
+          otherwise: Joi.string().allow('').optional(),
         }),
-        RAZORPAY_KEY_SECRET: Joi.string().when('RAZORPAY_ENABLED', {
+        RAZORPAY_KEY_SECRET: Joi.when('RAZORPAY_ENABLED', {
           is: 'true',
-          then: Joi.required(),
+          then: Joi.string().min(1).required(),
+          otherwise: Joi.string().allow('').optional(),
         }),
-        RAZORPAY_WEBHOOK_SECRET: Joi.string().when('RAZORPAY_ENABLED', {
+        RAZORPAY_WEBHOOK_SECRET: Joi.when('RAZORPAY_ENABLED', {
           is: 'true',
-          then: Joi.required(),
+          then: Joi.string().min(1).required(),
+          otherwise: Joi.string().allow('').optional(),
         }),
+        CASH_ENABLED: Joi.string().valid('true', 'false').default('false'),
       }),
       validationOptions: { abortEarly: false },
     }),

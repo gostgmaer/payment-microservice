@@ -15,6 +15,7 @@ import { Provider } from '@prisma/client';
 import { IPaymentProvider } from './interfaces/payment-provider.interface';
 import { StripeProvider } from './stripe/stripe.provider';
 import { RazorpayProvider } from './razorpay/razorpay.provider';
+import { CashProvider } from './cash/cash.provider';
 import { AppConfigService } from '../../config/app-config.service';
 
 @Injectable()
@@ -25,11 +26,24 @@ export class PaymentProviderFactory {
   constructor(
     private readonly stripeProvider: StripeProvider,
     private readonly razorpayProvider: RazorpayProvider,
+    private readonly cashProvider: CashProvider,
     private readonly config: AppConfigService,
   ) {
     this.providerMap = new Map();
     if (config.stripeEnabled)   this.providerMap.set(Provider.STRIPE, stripeProvider);
     if (config.razorpayEnabled) this.providerMap.set(Provider.RAZORPAY, razorpayProvider);
+
+    // Cash is enabled if explicitly configured OR if no other provider is active.
+    // This guarantees the service always has at least one payment option.
+    if (config.cashEnabled || this.providerMap.size === 0) {
+      this.providerMap.set(Provider.CASH, cashProvider);
+      if (!config.cashEnabled) {
+        this.logger.warn(
+          'No payment gateway configured — CASH provider auto-enabled as fallback. ' +
+          'Set CASH_ENABLED=true explicitly or configure Stripe/Razorpay.',
+        );
+      }
+    }
   }
 
   /** Get a specific provider by name. Throws if disabled. */

@@ -15,7 +15,6 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import Razorpay from 'razorpay';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { Provider } from '@prisma/client';
 import { AppConfigService } from '../../../config/app-config.service';
@@ -32,14 +31,21 @@ import {
 @Injectable()
 export class RazorpayProvider implements IPaymentProvider {
   readonly provider = Provider.RAZORPAY;
-  private readonly razorpay: Razorpay;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private readonly razorpay: any;
   private readonly logger = new Logger(RazorpayProvider.name);
 
   constructor(private readonly config: AppConfigService) {
-    this.razorpay = new Razorpay({
-      key_id: config.razorpayKeyId,
-      key_secret: config.razorpayKeySecret,
-    });
+    // Only instantiate SDK when Razorpay is enabled; guards against empty credentials.
+    // Uses require() to avoid esModuleInterop issues with Razorpay's CJS export.
+    if (config.razorpayEnabled) {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const RazorpaySdk = require('razorpay');
+      this.razorpay = new RazorpaySdk({
+        key_id: config.razorpayKeyId,
+        key_secret: config.razorpayKeySecret,
+      });
+    }
   }
 
   async createPayment(input: CreatePaymentInput): Promise<ProviderPaymentResponse> {

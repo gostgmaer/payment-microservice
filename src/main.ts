@@ -17,7 +17,8 @@ import { ClassSerializerInterceptor, ValidationPipe, VersioningType } from '@nes
 import { ConfigService } from '@nestjs/config';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
-import compression from 'compression';
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any
+const compression = require('compression') as (...args: any[]) => any;
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 
