@@ -11,12 +11,7 @@
  *  - Idempotent: same idempotencyKey returns existing refund.
  */
 
-import {
-  Injectable,
-  Logger,
-  NotFoundException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { Prisma, Refund, RefundStatus, TransactionStatus } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { TransactionService } from '../transaction/transaction.service';
@@ -28,6 +23,7 @@ import { hashIdempotencyKey } from '../../../common/utils/crypto.util';
 import { ERROR_CODES } from '../../../common/constants/error-codes.constant';
 
 export interface CreateRefundDto {
+  tenantId: string;
   transactionId: string;
   amount: bigint;
   reason?: string;
@@ -52,17 +48,23 @@ export class RefundService {
   async createRefund(dto: CreateRefundDto): Promise<Refund> {
     const hashedKey = hashIdempotencyKey(dto.idempotencyKey);
 
-    // Idempotency: return existing refund for same key
+    // Idempotency: return existing refund for same key — scoped to tenant
     const existingRefund = await this.prisma.refund.findFirst({
-      where: { transactionId: dto.transactionId, metadata: { path: ['idempotencyKey'], equals: hashedKey } },
+      where: {
+        tenantId: dto.tenantId,
+        transactionId: dto.transactionId,
+        metadata: { path: ['idempotencyKey'], equals: hashedKey },
+      },
     });
     if (existingRefund) return existingRefund;
 
-    // ── Validate transaction ──────────────────────────────────────────────
-    const transaction = await this.transactionService.findById(dto.transactionId);
+    // ── Validate transaction ────────────────────────────────────────────
+    const transaction = await this.transactionService.findById(dto.transactionId, dto.tenantId);
 
-    if (transaction.status !== TransactionStatus.SUCCESS &&
-        transaction.status !== TransactionStatus.PARTIALLY_REFUNDED) {
+    if (
+      transaction.status !== TransactionStatus.SUCCESS &&
+      transaction.status !== TransactionStatus.PARTIALLY_REFUNDED
+    ) {
       throw new BadRequestException({
         message: 'Only successful transactions can be refunded',
         errorCode: ERROR_CODES.REFUND_NOT_ELIGIBLE,
@@ -97,6 +99,7 @@ export class RefundService {
     // ── Create refund record ──────────────────────────────────────────────
     const refund = await this.prisma.refund.create({
       data: {
+        tenantId: dto.tenantId,
         transactionId: dto.transactionId,
         amount: dto.amount,
         currency: transaction.currency,
@@ -122,7 +125,8 @@ export class RefundService {
         await tx.refund.update({
           where: { id: refund.id },
           data: {
-            status: providerResult.status === 'SUCCESS' ? RefundStatus.SUCCESS : RefundStatus.PROCESSING,
+            status:
+              providerResult.status === 'SUCCESS' ? RefundStatus.SUCCESS : RefundStatus.PROCESSING,
             providerRefundId: providerResult.providerRefundId,
           },
         });
@@ -140,6 +144,7 @@ export class RefundService {
 
         // Record in ledger
         await this.ledgerService.recordRefund({
+          tenantId: dto.tenantId,
           transactionId: dto.transactionId,
           amount: dto.amount,
           currency: transaction.currency,
@@ -149,6 +154,7 @@ export class RefundService {
       });
 
       await this.auditService.log({
+        tenantId: dto.tenantId,
         actor: dto.actorId,
         action: 'REFUND_PROCESSED',
         resourceType: 'Refund',
@@ -170,9 +176,9 @@ export class RefundService {
     }
   }
 
-  async findByTransaction(transactionId: string): Promise<Refund[]> {
+  async findByTransaction(tenantId: string, transactionId: string): Promise<Refund[]> {
     return this.prisma.refund.findMany({
-      where: { transactionId },
+      where: { tenantId, transactionId },
       orderBy: { createdAt: 'desc' },
     });
   }

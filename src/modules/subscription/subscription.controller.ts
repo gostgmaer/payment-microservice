@@ -10,14 +10,16 @@ import {
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
+  BadRequestException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiSecurity, ApiQuery } from '@nestjs/swagger';
 import { IsString, IsNumber, IsOptional, IsEnum, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { ApiKeyGuard } from '../../common/guards/api-key.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { CurrentTenant } from '../../common/decorators/current-tenant.decorator';
 import { JwtPayload } from '../security/strategies/jwt.strategy';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { Permission } from '../../common/rbac/permissions';
@@ -25,11 +27,18 @@ import { SubscriptionService } from './subscription.service';
 import { PlanService } from './plan.service';
 
 export class CreatePlanDto {
+  @ApiProperty({ description: 'Tenant this plan belongs to' }) @IsString() tenantId: string;
   @ApiProperty() @IsString() name: string;
   @ApiPropertyOptional() @IsOptional() @IsString() description?: string;
-  @ApiProperty({ description: 'Amount in smallest currency unit' }) @IsNumber() @Min(1) @Type(() => Number) amountRaw: number;
+  @ApiProperty({ description: 'Amount in smallest currency unit' })
+  @IsNumber()
+  @Min(1)
+  @Type(() => Number)
+  amountRaw: number;
   @ApiProperty({ example: 'INR' }) @IsString() currency: string;
-  @ApiProperty({ enum: ['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'] }) @IsEnum(['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY']) interval: 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
+  @ApiProperty({ enum: ['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'] })
+  @IsEnum(['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'])
+  interval: 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
   @ApiPropertyOptional() @IsOptional() @IsNumber() @Type(() => Number) intervalCount?: number;
   @ApiPropertyOptional() @IsOptional() @IsNumber() @Type(() => Number) trialDays?: number;
 }
@@ -41,7 +50,9 @@ export class CreateSubscriptionDto {
 
 export class CancelSubscriptionDto {
   @ApiPropertyOptional() @IsOptional() @IsString() reason?: string;
-  @ApiPropertyOptional({ description: 'Cancel immediately or at period end' }) @IsOptional() immediate?: boolean;
+  @ApiPropertyOptional({ description: 'Cancel immediately or at period end' })
+  @IsOptional()
+  immediate?: boolean;
 }
 
 @ApiTags('Subscriptions')
@@ -66,23 +77,32 @@ export class SubscriptionController {
   @Get('plans')
   @RequirePermission(Permission.PLAN_READ)
   @ApiOperation({ summary: 'List available subscription plans' })
-  async listPlans(@Query('includeInactive') includeInactive?: string) {
-    return this.planService.findAll(includeInactive !== 'true');
+  @ApiQuery({ name: 'includeInactive', required: false })
+  async listPlans(
+    @CurrentTenant() tenantId: string,
+    @Query('includeInactive') includeInactive?: string,
+  ) {
+    return this.planService.findAll(tenantId, includeInactive !== 'true');
   }
 
   @Get('plans/:id')
   @RequirePermission(Permission.PLAN_READ)
   @ApiOperation({ summary: 'Get plan details' })
-  async getPlan(@Param('id', ParseUUIDPipe) id: string) {
-    return this.planService.findById(id);
+  async getPlan(@Param('id', ParseUUIDPipe) id: string, @CurrentTenant() tenantId: string) {
+    return this.planService.findById(id, tenantId);
   }
 
   @Delete('plans/:id')
   @UseGuards(ApiKeyGuard)
   @ApiSecurity('api-key')
   @ApiOperation({ summary: 'Deactivate a plan (admin)' })
-  async deactivatePlan(@Param('id', ParseUUIDPipe) id: string) {
-    return this.planService.deactivate(id);
+  @ApiQuery({ name: 'tenantId', required: true, description: 'Tenant that owns this plan' })
+  async deactivatePlan(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('tenantId') tenantId: string,
+  ) {
+    if (!tenantId) throw new BadRequestException('tenantId query parameter is required');
+    return this.planService.deactivate(id, tenantId);
   }
 
   // ── Subscriptions ───────────────────────────────────────────────────────
@@ -96,8 +116,10 @@ export class SubscriptionController {
   async createSubscription(
     @Body() dto: CreateSubscriptionDto,
     @CurrentUser() user: JwtPayload,
+    @CurrentTenant() tenantId: string,
   ) {
     return this.subscriptionService.createSubscription({
+      tenantId,
       customerId: user.sub,
       planId: dto.planId,
       trialOverrideDays: dto.trialOverrideDays,
@@ -112,10 +134,11 @@ export class SubscriptionController {
   @ApiOperation({ summary: 'List subscriptions for current customer' })
   async listSubscriptions(
     @CurrentUser() user: JwtPayload,
+    @CurrentTenant() tenantId: string,
     @Query('page') page = 1,
     @Query('limit') limit = 20,
   ) {
-    return this.subscriptionService.findByCustomer(user.sub, +page, +limit);
+    return this.subscriptionService.findByCustomer(tenantId, user.sub, +page, +limit);
   }
 
   @Get(':id')
@@ -123,8 +146,8 @@ export class SubscriptionController {
   @ApiBearerAuth()
   @RequirePermission(Permission.SUBSCRIPTION_READ)
   @ApiOperation({ summary: 'Get subscription details' })
-  async getSubscription(@Param('id', ParseUUIDPipe) id: string) {
-    return this.subscriptionService.findById(id);
+  async getSubscription(@Param('id', ParseUUIDPipe) id: string, @CurrentTenant() tenantId: string) {
+    return this.subscriptionService.findById(id, tenantId);
   }
 
   @Delete(':id')

@@ -15,7 +15,9 @@ import { AppConfigService } from './app-config.service';
       isGlobal: true,
       load: [configuration],
       validationSchema: Joi.object({
-        NODE_ENV: Joi.string().valid('development', 'test', 'staging', 'production').default('development'),
+        NODE_ENV: Joi.string()
+          .valid('development', 'test', 'staging', 'production')
+          .default('development'),
         PORT: Joi.number().default(3000),
         DATABASE_URL: Joi.string().required(),
         REDIS_HOST: Joi.string().default('localhost'),

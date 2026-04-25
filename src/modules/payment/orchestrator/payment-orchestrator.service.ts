@@ -14,12 +14,7 @@
  * the provider's server-side API or webhook.
  */
 
-import {
-  Injectable,
-  Logger,
-  BadRequestException,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { Provider, TransactionStatus, AttemptStatus } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { TransactionService } from '../transaction/transaction.service';
@@ -32,6 +27,7 @@ import { AppConfigService } from '../../config/app-config.service';
 import { ERROR_CODES } from '../../../common/constants/error-codes.constant';
 
 export interface InitiatePaymentDto {
+  tenantId: string;
   orderId: string;
   idempotencyKey: string;
   customerId: string;
@@ -39,7 +35,7 @@ export interface InitiatePaymentDto {
   amount: bigint;
   currency: string;
   invoiceId?: string;
-  providers?: Provider[];   // If omitted, all enabled providers are used
+  providers?: Provider[]; // If omitted, all enabled providers are used
   preferredMethod?: string;
   metadata?: Record<string, unknown>;
   actorId: string;
@@ -63,6 +59,7 @@ export interface InitiatePaymentResult {
 }
 
 export interface VerifyPaymentDto {
+  tenantId: string;
   transactionId: string;
   attemptId: string;
   providerPaymentId?: string;
@@ -103,6 +100,7 @@ export class PaymentOrchestratorService {
 
     // ── Step 2: Create transaction ─────────────────────────────────────────
     const transaction = await this.transactionService.create({
+      tenantId: dto.tenantId,
       orderId: dto.orderId,
       idempotencyKey: dto.idempotencyKey,
       customerId: dto.customerId,
@@ -113,6 +111,7 @@ export class PaymentOrchestratorService {
     });
 
     await this.auditService.log({
+      tenantId: dto.tenantId,
       actor: dto.actorId,
       action: 'PAYMENT_INITIATED',
       resourceType: 'Transaction',
@@ -232,10 +231,15 @@ export class PaymentOrchestratorService {
         });
 
         // Mark transaction as SUCCESS
-        await this.transactionService.updateStatus(dto.transactionId, TransactionStatus.SUCCESS, tx);
+        await this.transactionService.updateStatus(
+          dto.transactionId,
+          TransactionStatus.SUCCESS,
+          tx,
+        );
 
         // Create double-entry ledger entries
         await this.ledgerService.recordPayment({
+          tenantId: dto.tenantId,
           transactionId: dto.transactionId,
           amount: attempt.amount,
           currency: attempt.currency,
@@ -245,6 +249,7 @@ export class PaymentOrchestratorService {
       });
 
       await this.auditService.log({
+        tenantId: dto.tenantId,
         actor: dto.actorId,
         action: 'PAYMENT_VERIFIED',
         resourceType: 'Transaction',
@@ -255,9 +260,13 @@ export class PaymentOrchestratorService {
 
       return { success: true, transactionId: dto.transactionId };
     } else {
-      await this.attemptService.markFailed(attempt.id, verifyResult.failureReason ?? 'Verification failed');
+      await this.attemptService.markFailed(
+        attempt.id,
+        verifyResult.failureReason ?? 'Verification failed',
+      );
 
       await this.auditService.log({
+        tenantId: dto.tenantId,
         actor: dto.actorId,
         action: 'PAYMENT_VERIFICATION_FAILED',
         resourceType: 'Transaction',

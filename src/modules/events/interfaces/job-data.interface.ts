@@ -1,6 +1,7 @@
 /** Typed job data interfaces for each BullMQ queue. */
 
 export interface PaymentJobData {
+  tenantId: string;
   transactionId: string;
   attemptId: string;
   providerPaymentId?: string;

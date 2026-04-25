@@ -96,10 +96,12 @@ enum CycleStatus {
 /// Source of truth for a payment. One transaction per customer order.
 model Transaction {
   id             String            @id @default(uuid())
-  /// External order identifier — must be unique per order
-  orderId        String            @unique
-  /// Caller-supplied idempotency key (SHA-256 hash stored)
-  idempotencyKey String            @unique
+  /// Tenant identifier — all financial data is scoped per tenant
+  tenantId       String
+  /// External order identifier — unique per tenant
+  orderId        String
+  /// Caller-supplied idempotency key (SHA-256 hash stored) — unique per tenant
+  idempotencyKey String
   customerId     String
   amount         BigInt            // stored in smallest unit (paise / cents)
   currency       String            @default("INR")
@@ -116,7 +118,10 @@ model Transaction {
   refunds       Refund[]
   auditLogs     AuditLog[]
 
-  @@index([customerId])
+  @@unique([tenantId, orderId])
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId])
+  @@index([tenantId, customerId])
   @@index([status])
   @@index([createdAt])
 }
@@ -158,6 +163,7 @@ model PaymentAttempt {
 /// (a debit and a credit) — immutable, never updated.
 model LedgerEntry {
   id            String    @id @default(uuid())
+  tenantId      String
   transactionId String
   type          EntryType
   /// Account being debited  (e.g. "ACCOUNTS_RECEIVABLE")
@@ -172,6 +178,7 @@ model LedgerEntry {
 
   transaction Transaction @relation(fields: [transactionId], references: [id])
 
+  @@index([tenantId])
   @@index([transactionId])
   @@index([createdAt])
 }
@@ -201,6 +208,7 @@ model WebhookLog {
 /// Refund record — linked to the original transaction.
 model Refund {
   id               String       @id @default(uuid())
+  tenantId         String
   transactionId    String
   amount           BigInt
   currency         String
@@ -213,6 +221,7 @@ model Refund {
 
   transaction Transaction @relation(fields: [transactionId], references: [id])
 
+  @@index([tenantId])
   @@index([transactionId])
 }
 
@@ -221,7 +230,8 @@ model Refund {
 /// Invoice must always be created before a payment is initiated.
 model Invoice {
   id            String        @id @default(uuid())
-  invoiceNumber String        @unique
+  tenantId      String
+  invoiceNumber String
   customerId    String
   status        InvoiceStatus @default(DRAFT)
   subtotal      BigInt        // sum of item amounts before tax
@@ -237,7 +247,9 @@ model Invoice {
   items        InvoiceItem[]
   transactions Transaction[]
 
-  @@index([customerId])
+  @@unique([tenantId, invoiceNumber])
+  @@index([tenantId])
+  @@index([tenantId, customerId])
   @@index([status])
 }
 
@@ -269,6 +281,7 @@ model InvoiceItem {
 /// Subscription plan definition.
 model Plan {
   id            String       @id @default(uuid())
+  tenantId      String
   name          String
   description   String?
   amount        BigInt       // recurring charge per interval
@@ -282,11 +295,14 @@ model Plan {
   updatedAt     DateTime     @updatedAt
 
   subscriptions Subscription[]
+
+  @@index([tenantId])
 }
 
 /// Customer subscription — tracks lifecycle and renewal windows.
 model Subscription {
   id                 String             @id @default(uuid())
+  tenantId           String
   customerId         String
   planId             String
   status             SubscriptionStatus @default(ACTIVE)
@@ -303,7 +319,8 @@ model Subscription {
   plan   Plan               @relation(fields: [planId], references: [id])
   cycles SubscriptionCycle[]
 
-  @@index([customerId])
+  @@index([tenantId])
+  @@index([tenantId, customerId])
   @@index([status])
   @@index([currentPeriodEnd])
 }
@@ -335,6 +352,7 @@ model SubscriptionCycle {
 /// Immutable financial audit log — append-only, never updated or deleted.
 model AuditLog {
   id            String    @id @default(uuid())
+  tenantId      String
   /// Who performed the action (userId, systemProcess, etc.)
   actor         String
   /// Verb: PAYMENT_INITIATED, REFUND_PROCESSED, SUBSCRIPTION_RENEWED, etc.
@@ -351,6 +369,7 @@ model AuditLog {
 
   transaction Transaction? @relation(fields: [transactionId], references: [id])
 
+  @@index([tenantId])
   @@index([resourceType, resourceId])
   @@index([transactionId])
   @@index([actor])

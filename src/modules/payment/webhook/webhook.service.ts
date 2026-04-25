@@ -11,12 +11,7 @@
  *  5. Webhook payload stored BEFORE processing — ensures we never lose events.
  */
 
-import {
-  Injectable,
-  Logger,
-  UnauthorizedException,
-  ConflictException,
-} from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException, ConflictException } from '@nestjs/common';
 import { Prisma, Provider, WebhookLog } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { StripeProvider } from '../provider/stripe/stripe.provider';
@@ -77,7 +72,10 @@ export class WebhookService {
 
     // 5. Process event
     try {
-      await this.processStripeEvent(event as unknown as { type: string; data: { object: Record<string, unknown> } }, webhookLog.id);
+      await this.processStripeEvent(
+        event as unknown as { type: string; data: { object: Record<string, unknown> } },
+        webhookLog.id,
+      );
 
       await this.prisma.webhookLog.update({
         where: { id: webhookLog.id },
@@ -94,7 +92,10 @@ export class WebhookService {
     return { received: true };
   }
 
-  private async processStripeEvent(event: { type: string; data: { object: Record<string, unknown> } }, webhookLogId: string): Promise<void> {
+  private async processStripeEvent(
+    event: { type: string; data: { object: Record<string, unknown> } },
+    webhookLogId: string,
+  ): Promise<void> {
     switch (event.type) {
       case 'payment_intent.succeeded': {
         const pi = event.data.object as { id: string; metadata: { transactionId: string } };
@@ -102,7 +103,11 @@ export class WebhookService {
         break;
       }
       case 'payment_intent.payment_failed': {
-        const pi = event.data.object as { id: string; last_payment_error?: { message?: string }; metadata: { transactionId: string } };
+        const pi = event.data.object as {
+          id: string;
+          last_payment_error?: { message?: string };
+          metadata: { transactionId: string };
+        };
         await this.handlePaymentIntentFailed(pi);
         break;
       }
@@ -136,7 +141,13 @@ export class WebhookService {
       data: { attemptId: attempt.id },
     });
 
+    const transaction = await this.prisma.transaction.findUnique({
+      where: { id: attempt.transactionId },
+      select: { tenantId: true },
+    });
+
     await this.orchestrator.verifyPayment({
+      tenantId: transaction?.tenantId ?? '',
       transactionId: attempt.transactionId,
       attemptId: attempt.id,
       actorId: 'stripe-webhook',
@@ -173,7 +184,9 @@ export class WebhookService {
     const body = JSON.parse(rawBody.toString()) as {
       event: string;
       payload: {
-        payment?: { entity: { id: string; order_id: string; status: string; error_description?: string } };
+        payment?: {
+          entity: { id: string; order_id: string; status: string; error_description?: string };
+        };
         order?: { entity: { id: string } };
       };
     };
@@ -216,7 +229,9 @@ export class WebhookService {
     body: {
       event: string;
       payload: {
-        payment?: { entity: { id: string; order_id: string; status: string; error_description?: string } };
+        payment?: {
+          entity: { id: string; order_id: string; status: string; error_description?: string };
+        };
       };
     },
     webhookLogId: string,
@@ -237,7 +252,13 @@ export class WebhookService {
           data: { attemptId: attempt.id },
         });
 
+        const transaction = await this.prisma.transaction.findUnique({
+          where: { id: attempt.transactionId },
+          select: { tenantId: true },
+        });
+
         await this.orchestrator.verifyPayment({
+          tenantId: transaction?.tenantId ?? '',
           transactionId: attempt.transactionId,
           attemptId: attempt.id,
           providerPaymentId: payment.id,

@@ -15,6 +15,7 @@ import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
+import { CurrentTenant } from '../../../common/decorators/current-tenant.decorator';
 import { JwtPayload } from '../../security/strategies/jwt.strategy';
 import { RequirePermission } from '../../../common/decorators/require-permission.decorator';
 import { Permission } from '../../../common/rbac/permissions';
@@ -52,8 +53,10 @@ export class RefundController {
     @Param('transactionId', ParseUUIDPipe) transactionId: string,
     @Body() dto: CreateRefundDto,
     @CurrentUser() user: JwtPayload,
+    @CurrentTenant() tenantId: string,
   ) {
     return this.refundService.createRefund({
+      tenantId,
       transactionId,
       amount: BigInt(dto.amount),
       reason: dto.reason,
@@ -67,7 +70,8 @@ export class RefundController {
   @ApiOperation({ summary: 'List refunds for a transaction' })
   async listRefunds(
     @Param('transactionId', ParseUUIDPipe) transactionId: string,
+    @CurrentTenant() tenantId: string,
   ) {
-    return this.refundService.findByTransaction(transactionId);
+    return this.refundService.findByTransaction(tenantId, transactionId);
   }
 }

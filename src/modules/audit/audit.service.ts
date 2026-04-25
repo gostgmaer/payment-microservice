@@ -11,6 +11,7 @@ import { Prisma, AuditLog } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 export interface CreateAuditLogDto {
+  tenantId: string;
   actor: string;
   action: string;
   resourceType: string;
@@ -33,6 +34,7 @@ export class AuditService {
     try {
       return await this.prisma.auditLog.create({
         data: {
+          tenantId: dto.tenantId,
           actor: dto.actor,
           action: dto.action,
           resourceType: dto.resourceType,
@@ -53,20 +55,21 @@ export class AuditService {
   }
 
   async findByResource(
+    tenantId: string,
     resourceType: string,
     resourceId: string,
     limit = 50,
   ): Promise<AuditLog[]> {
     return this.prisma.auditLog.findMany({
-      where: { resourceType, resourceId },
+      where: { tenantId, resourceType, resourceId },
       orderBy: { createdAt: 'desc' },
       take: limit,
     });
   }
 
-  async findByTransaction(transactionId: string): Promise<AuditLog[]> {
+  async findByTransaction(tenantId: string, transactionId: string): Promise<AuditLog[]> {
     return this.prisma.auditLog.findMany({
-      where: { transactionId },
+      where: { tenantId, transactionId },
       orderBy: { createdAt: 'asc' },
     });
   }

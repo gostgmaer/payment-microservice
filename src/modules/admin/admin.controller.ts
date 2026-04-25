@@ -29,18 +29,14 @@ import {
   ParseIntPipe,
   DefaultValuePipe,
 } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiBearerAuth,
-  ApiOperation,
-  ApiQuery,
-} from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { TransactionStatus, RefundStatus, InvoiceStatus, SubscriptionStatus } from '@prisma/client';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
+import { CurrentTenant } from '../../common/decorators/current-tenant.decorator';
 import { Permission } from '../../common/rbac/permissions';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LedgerService } from '../ledger/ledger.service';
@@ -63,7 +59,7 @@ export class AdminController {
   @Get('dashboard')
   @RequirePermission(Permission.ADMIN_DASHBOARD)
   @ApiOperation({ summary: 'Aggregate stats: revenue, counts, subscription health' })
-  async dashboard() {
+  async dashboard(@CurrentTenant() tenantId: string) {
     const [
       txTotal,
       txByStatus,
@@ -72,17 +68,23 @@ export class AdminController {
       overdueSubscriptions,
       invoiceStats,
     ] = await Promise.all([
-      this.prisma.transaction.count(),
+      this.prisma.transaction.count({ where: { tenantId } }),
       this.prisma.transaction.groupBy({
         by: ['status'],
+        where: { tenantId },
         _count: { id: true },
         _sum: { amount: true },
       }),
-      this.prisma.refund.aggregate({ _sum: { amount: true }, _count: { id: true } }),
-      this.prisma.subscription.count({ where: { status: SubscriptionStatus.ACTIVE } }),
-      this.prisma.subscription.count({ where: { status: SubscriptionStatus.PAST_DUE } }),
+      this.prisma.refund.aggregate({
+        where: { tenantId },
+        _sum: { amount: true },
+        _count: { id: true },
+      }),
+      this.prisma.subscription.count({ where: { tenantId, status: SubscriptionStatus.ACTIVE } }),
+      this.prisma.subscription.count({ where: { tenantId, status: SubscriptionStatus.PAST_DUE } }),
       this.prisma.invoice.groupBy({
         by: ['status'],
+        where: { tenantId },
         _count: { id: true },
         _sum: { totalAmount: true },
       }),
@@ -124,6 +126,7 @@ export class AdminController {
   @ApiQuery({ name: 'customerId', required: false })
   @ApiQuery({ name: 'currency', required: false })
   async listTransactions(
+    @CurrentTenant() tenantId: string,
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
     @Query('status') status?: TransactionStatus,
@@ -131,6 +134,7 @@ export class AdminController {
     @Query('currency') currency?: string,
   ) {
     const where = {
+      tenantId,
       ...(status && { status }),
       ...(customerId && { customerId }),
       ...(currency && { currency }),
@@ -153,10 +157,10 @@ export class AdminController {
   @Get('transactions/:id')
   @RequirePermission(Permission.ADMIN_TRANSACTIONS)
   @ApiOperation({ summary: 'Full transaction detail: attempts, ledger entries, refunds, audit' })
-  async getTransaction(@Param('id', ParseUUIDPipe) id: string) {
+  async getTransaction(@Param('id', ParseUUIDPipe) id: string, @CurrentTenant() tenantId: string) {
     const [tx, ledger, audit] = await Promise.all([
-      this.prisma.transaction.findUniqueOrThrow({
-        where: { id },
+      this.prisma.transaction.findFirstOrThrow({
+        where: { id, tenantId },
         include: {
           attempts: true,
           refunds: true,
@@ -165,7 +169,7 @@ export class AdminController {
         },
       }),
       this.ledgerService.getByTransaction(id),
-      this.auditService.findByTransaction(id),
+      this.auditService.findByTransaction(tenantId, id),
     ]);
 
     return { ...tx, ledger, audit };
@@ -181,8 +185,11 @@ export class AdminController {
   @Get('transactions/:id/audit')
   @RequirePermission(Permission.ADMIN_AUDIT)
   @ApiOperation({ summary: 'Full audit trail for a transaction' })
-  async getTransactionAudit(@Param('id', ParseUUIDPipe) id: string) {
-    return this.auditService.findByTransaction(id);
+  async getTransactionAudit(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentTenant() tenantId: string,
+  ) {
+    return this.auditService.findByTransaction(tenantId, id);
   }
 
   // ─── Refunds ────────────────────────────────────────────────────────────
@@ -194,11 +201,12 @@ export class AdminController {
   @ApiQuery({ name: 'limit', required: false })
   @ApiQuery({ name: 'status', required: false, enum: RefundStatus })
   async listRefunds(
+    @CurrentTenant() tenantId: string,
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
     @Query('status') status?: RefundStatus,
   ) {
-    const where = status ? { status } : {};
+    const where = { tenantId, ...(status ? { status } : {}) };
     const [data, total] = await Promise.all([
       this.prisma.refund.findMany({
         where,
@@ -223,12 +231,14 @@ export class AdminController {
   @ApiQuery({ name: 'status', required: false, enum: InvoiceStatus })
   @ApiQuery({ name: 'customerId', required: false })
   async listInvoices(
+    @CurrentTenant() tenantId: string,
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
     @Query('status') status?: InvoiceStatus,
     @Query('customerId') customerId?: string,
   ) {
     const where = {
+      tenantId,
       ...(status && { status }),
       ...(customerId && { customerId }),
     };
@@ -257,12 +267,14 @@ export class AdminController {
   @ApiQuery({ name: 'status', required: false, enum: SubscriptionStatus })
   @ApiQuery({ name: 'customerId', required: false })
   async listSubscriptions(
+    @CurrentTenant() tenantId: string,
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
     @Query('status') status?: SubscriptionStatus,
     @Query('customerId') customerId?: string,
   ) {
     const where = {
+      tenantId,
       ...(status && { status }),
       ...(customerId && { customerId }),
     };
@@ -284,13 +296,13 @@ export class AdminController {
   @Get('subscriptions/:id')
   @RequirePermission(Permission.ADMIN_SUBSCRIPTIONS)
   @ApiOperation({ summary: 'Full subscription detail: plan, all cycles, audit' })
-  async getSubscription(@Param('id', ParseUUIDPipe) id: string) {
+  async getSubscription(@Param('id', ParseUUIDPipe) id: string, @CurrentTenant() tenantId: string) {
     const [subscription, audit] = await Promise.all([
-      this.prisma.subscription.findUniqueOrThrow({
-        where: { id },
+      this.prisma.subscription.findFirstOrThrow({
+        where: { id, tenantId },
         include: { plan: true, cycles: { orderBy: { createdAt: 'asc' } } },
       }),
-      this.auditService.findByResource('Subscription', id),
+      this.auditService.findByResource(tenantId, 'Subscription', id),
     ]);
 
     return { ...subscription, audit };
@@ -349,9 +361,14 @@ export class AdminController {
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
   @ApiQuery({ name: 'actor', required: false, description: 'Filter by actor ID' })
-  @ApiQuery({ name: 'resourceType', required: false, description: 'e.g. Transaction, Subscription' })
+  @ApiQuery({
+    name: 'resourceType',
+    required: false,
+    description: 'e.g. Transaction, Subscription',
+  })
   @ApiQuery({ name: 'action', required: false, description: 'e.g. PAYMENT_INITIATED' })
   async listAuditLogs(
+    @CurrentTenant() tenantId: string,
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number,
     @Query('actor') actor?: string,
@@ -359,6 +376,7 @@ export class AdminController {
     @Query('action') action?: string,
   ) {
     const where = {
+      tenantId,
       ...(actor && { actor }),
       ...(resourceType && { resourceType }),
       ...(action && { action }),
@@ -384,10 +402,7 @@ export class AdminController {
   @ApiOperation({ summary: 'Account balance — sum of all debit/credit entries per account' })
   @ApiQuery({ name: 'account', required: true, description: 'e.g. REVENUE, ACCOUNTS_RECEIVABLE' })
   @ApiQuery({ name: 'currency', required: false })
-  async getAccountBalance(
-    @Query('account') account: string,
-    @Query('currency') currency = 'INR',
-  ) {
+  async getAccountBalance(@Query('account') account: string, @Query('currency') currency = 'INR') {
     return this.ledgerService.getAccountBalance(account, currency);
   }
 }

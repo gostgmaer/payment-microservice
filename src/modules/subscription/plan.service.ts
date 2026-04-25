@@ -9,6 +9,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { ERROR_CODES } from '../../common/constants/error-codes.constant';
 
 export interface CreatePlanDto {
+  tenantId: string;
   name: string;
   description?: string;
   amount: bigint;
@@ -34,20 +35,27 @@ export class PlanService {
     });
   }
 
-  async findAll(onlyActive = true): Promise<Plan[]> {
+  async findAll(tenantId: string, onlyActive = true): Promise<Plan[]> {
     return this.prisma.plan.findMany({
-      where: onlyActive ? { isActive: true } : undefined,
+      where: { tenantId, ...(onlyActive && { isActive: true }) },
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  async findById(id: string): Promise<Plan> {
-    const plan = await this.prisma.plan.findUnique({ where: { id } });
-    if (!plan) throw new NotFoundException({ message: 'Plan not found', errorCode: ERROR_CODES.PLAN_NOT_FOUND });
+  async findById(id: string, tenantId?: string): Promise<Plan> {
+    const plan = await this.prisma.plan.findFirst({
+      where: { id, ...(tenantId && { tenantId }) },
+    });
+    if (!plan)
+      throw new NotFoundException({
+        message: 'Plan not found',
+        errorCode: ERROR_CODES.PLAN_NOT_FOUND,
+      });
     return plan;
   }
 
-  async deactivate(id: string): Promise<Plan> {
+  async deactivate(id: string, tenantId: string): Promise<Plan> {
+    await this.findById(id, tenantId); // ensures plan belongs to tenant
     return this.prisma.plan.update({ where: { id }, data: { isActive: false } });
   }
 }

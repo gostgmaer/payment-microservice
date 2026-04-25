@@ -19,6 +19,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { ApiKeyGuard } from '../../common/guards/api-key.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { TenantGuard } from '../../common/guards/tenant.guard';
 import { IdempotencyService } from './services/idempotency.service';
 import { REDIS_CLIENT } from '../../common/interceptors/idempotency.interceptor';
 
@@ -41,6 +42,7 @@ import { REDIS_CLIENT } from '../../common/interceptors/idempotency.interceptor'
     ApiKeyGuard,
     RolesGuard,
     PermissionsGuard,
+    TenantGuard,
     IdempotencyService,
     {
       // Shared Redis client — exported globally so BullMQ, idempotency, etc.
@@ -65,6 +67,15 @@ import { REDIS_CLIENT } from '../../common/interceptors/idempotency.interceptor'
       },
     },
   ],
-  exports: [JwtModule, JwtAuthGuard, ApiKeyGuard, RolesGuard, PermissionsGuard, IdempotencyService, REDIS_CLIENT],
+  exports: [
+    JwtModule,
+    JwtAuthGuard,
+    ApiKeyGuard,
+    RolesGuard,
+    PermissionsGuard,
+    TenantGuard,
+    IdempotencyService,
+    REDIS_CLIENT,
+  ],
 })
 export class SecurityModule {}

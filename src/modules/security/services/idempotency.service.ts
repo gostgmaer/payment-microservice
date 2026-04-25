@@ -31,13 +31,7 @@ export class IdempotencyService {
     const ttl = this.config.idempotencyTtlSeconds;
 
     // SET NX EX — atomic operation
-    const result = await this.redis.set(
-      `${PREFIX}${hashed}`,
-      value,
-      'EX',
-      ttl,
-      'NX',
-    );
+    const result = await this.redis.set(`${PREFIX}${hashed}`, value, 'EX', ttl, 'NX');
 
     return result === 'OK';
   }

@@ -10,17 +10,13 @@ import {
   HttpStatus,
   ParseUUIDPipe,
 } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiBearerAuth,
-  ApiResponse,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
 import { IsString, IsNumber, IsOptional, IsArray, IsEnum, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { Provider } from '@prisma/client';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
+import { CurrentTenant } from '../../../common/decorators/current-tenant.decorator';
 import { JwtPayload } from '../../security/strategies/jwt.strategy';
 import { RequirePermission } from '../../../common/decorators/require-permission.decorator';
 import { Permission } from '../../../common/rbac/permissions';
@@ -33,7 +29,10 @@ export class InitiatePaymentRequestDto {
   @IsString()
   orderId: string;
 
-  @ApiProperty({ description: 'Caller-supplied idempotency key (UUID or random string)', example: 'a3f8b2c1-...' })
+  @ApiProperty({
+    description: 'Caller-supplied idempotency key (UUID or random string)',
+    example: 'a3f8b2c1-...',
+  })
   @IsString()
   idempotencyKey: string;
 
@@ -107,8 +106,10 @@ export class PaymentOrchestratorController {
   async initiatePayment(
     @Body() dto: InitiatePaymentRequestDto,
     @CurrentUser() user: JwtPayload,
+    @CurrentTenant() tenantId: string,
   ) {
     return this.orchestrator.initiatePayment({
+      tenantId,
       orderId: dto.orderId,
       idempotencyKey: dto.idempotencyKey,
       customerId: user.sub,
@@ -134,8 +135,10 @@ export class PaymentOrchestratorController {
     @Param('transactionId', ParseUUIDPipe) transactionId: string,
     @Body() dto: VerifyPaymentRequestDto,
     @CurrentUser() user: JwtPayload,
+    @CurrentTenant() tenantId: string,
   ) {
     return this.orchestrator.verifyPayment({
+      tenantId,
       transactionId,
       attemptId: dto.attemptId,
       providerPaymentId: dto.providerPaymentId,
@@ -144,14 +147,15 @@ export class PaymentOrchestratorController {
     });
   }
 
-  /** Retrieve a transaction with its attempts. */
+  /** Retrieve a transaction with its attempts. Scoped to current tenant. */
   @Get(':transactionId')
   @RequirePermission(Permission.PAYMENT_READ)
   @ApiOperation({ summary: 'Get transaction details' })
   async getTransaction(
     @Param('transactionId', ParseUUIDPipe) transactionId: string,
+    @CurrentTenant() tenantId: string,
   ) {
-    return this.transactionService.findById(transactionId);
+    return this.transactionService.findById(transactionId, tenantId);
   }
 
   /** List all transactions for the authenticated customer. */
@@ -160,9 +164,10 @@ export class PaymentOrchestratorController {
   @ApiOperation({ summary: 'List transactions for current customer' })
   async listTransactions(
     @CurrentUser() user: JwtPayload,
+    @CurrentTenant() tenantId: string,
     @Query('page') page = 1,
     @Query('limit') limit = 20,
   ) {
-    return this.transactionService.findByCustomer(user.sub, +page, +limit);
+    return this.transactionService.findByCustomer(tenantId, user.sub, +page, +limit);
   }
 }

@@ -79,8 +79,7 @@ export class RazorpayProvider implements IPaymentProvider {
       const receivedBuf = Buffer.from(input.providerSignature);
 
       const isValid =
-        expectedBuf.length === receivedBuf.length &&
-        timingSafeEqual(expectedBuf, receivedBuf);
+        expectedBuf.length === receivedBuf.length && timingSafeEqual(expectedBuf, receivedBuf);
 
       return {
         isSuccess: isValid,
@@ -104,7 +103,12 @@ export class RazorpayProvider implements IPaymentProvider {
       notes: { reason: input.reason ?? 'Refund requested' },
     });
 
-    const status = refund.status === 'processed' ? 'SUCCESS' : refund.status === 'pending' ? 'PENDING' : 'FAILED';
+    const status =
+      refund.status === 'processed'
+        ? 'SUCCESS'
+        : refund.status === 'pending'
+          ? 'PENDING'
+          : 'FAILED';
 
     return {
       providerRefundId: refund.id,

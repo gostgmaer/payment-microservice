@@ -13,13 +13,15 @@
  *  7. After max retries → move to EXPIRED.
  */
 
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import {
-  Injectable,
-  Logger,
-  NotFoundException,
-  BadRequestException,
-} from '@nestjs/common';
-import { Prisma, Subscription, SubscriptionStatus, Plan, CycleStatus, PlanInterval } from '@prisma/client';
+  Prisma,
+  Subscription,
+  SubscriptionStatus,
+  Plan,
+  CycleStatus,
+  PlanInterval,
+} from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
 import { AuditService } from '../audit/audit.service';
@@ -29,6 +31,7 @@ import { generateIdempotencyKey } from '../../common/utils/crypto.util';
 import * as dayjs from 'dayjs';
 
 export interface CreateSubscriptionDto {
+  tenantId: string;
   customerId: string;
   planId: string;
   trialOverrideDays?: number;
@@ -58,8 +61,16 @@ export class SubscriptionService {
 
   async createSubscription(dto: CreateSubscriptionDto): Promise<SubscriptionWithPlan> {
     const plan = await this.prisma.plan.findUnique({ where: { id: dto.planId } });
-    if (!plan) throw new NotFoundException({ message: 'Plan not found', errorCode: ERROR_CODES.PLAN_NOT_FOUND });
-    if (!plan.isActive) throw new BadRequestException({ message: 'Plan is inactive', errorCode: ERROR_CODES.PLAN_INACTIVE });
+    if (!plan)
+      throw new NotFoundException({
+        message: 'Plan not found',
+        errorCode: ERROR_CODES.PLAN_NOT_FOUND,
+      });
+    if (!plan.isActive)
+      throw new BadRequestException({
+        message: 'Plan is inactive',
+        errorCode: ERROR_CODES.PLAN_INACTIVE,
+      });
 
     const trialDays = dto.trialOverrideDays ?? plan.trialDays;
     const now = new Date();
@@ -69,6 +80,7 @@ export class SubscriptionService {
 
     const subscription = await this.prisma.subscription.create({
       data: {
+        tenantId: dto.tenantId,
         customerId: dto.customerId,
         planId: dto.planId,
         status: trialDays > 0 ? SubscriptionStatus.TRIALING : SubscriptionStatus.ACTIVE,
@@ -82,6 +94,7 @@ export class SubscriptionService {
     });
 
     await this.auditService.log({
+      tenantId: dto.tenantId,
       actor: dto.actorId,
       action: 'SUBSCRIPTION_CREATED',
       resourceType: 'Subscription',
@@ -115,6 +128,7 @@ export class SubscriptionService {
     });
 
     await this.auditService.log({
+      tenantId: subscription.tenantId,
       actor: dto.actorId,
       action: 'SUBSCRIPTION_CANCELLED',
       resourceType: 'Subscription',
@@ -133,7 +147,11 @@ export class SubscriptionService {
   async processRenewal(subscriptionId: string): Promise<void> {
     const subscription = await this.findById(subscriptionId);
 
-    const renewableStatuses: SubscriptionStatus[] = [SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE, SubscriptionStatus.TRIALING];
+    const renewableStatuses: SubscriptionStatus[] = [
+      SubscriptionStatus.ACTIVE,
+      SubscriptionStatus.PAST_DUE,
+      SubscriptionStatus.TRIALING,
+    ];
     if (!renewableStatuses.includes(subscription.status)) {
       throw new BadRequestException({
         message: `Subscription ${subscriptionId} is not renewable (status: ${subscription.status})`,
@@ -158,17 +176,19 @@ export class SubscriptionService {
     }
 
     // Create or reuse cycle
-    const cycle = existingCycle ?? await this.prisma.subscriptionCycle.create({
-      data: {
-        subscriptionId,
-        periodStart: subscription.currentPeriodStart,
-        periodEnd: subscription.currentPeriodEnd,
-        amount: plan.amount,
-        currency: plan.currency,
-        status: CycleStatus.PROCESSING,
-        attemptCount: 0,
-      },
-    });
+    const cycle =
+      existingCycle ??
+      (await this.prisma.subscriptionCycle.create({
+        data: {
+          subscriptionId,
+          periodStart: subscription.currentPeriodStart,
+          periodEnd: subscription.currentPeriodEnd,
+          amount: plan.amount,
+          currency: plan.currency,
+          status: CycleStatus.PROCESSING,
+          attemptCount: 0,
+        },
+      }));
 
     // Update attempt count
     await this.prisma.subscriptionCycle.update({
@@ -179,15 +199,18 @@ export class SubscriptionService {
     try {
       // Create invoice for this cycle
       const invoice = await this.billingService.createInvoice({
+        tenantId: subscription.tenantId,
         customerId: subscription.customerId,
         currency: plan.currency,
-        items: [{
-          description: `${plan.name} — ${plan.interval} subscription`,
-          quantity: 1,
-          unitAmount: plan.amount,
-          gstType: 'intra',
-          gstRate: 18, // 18% GST
-        }],
+        items: [
+          {
+            description: `${plan.name} — ${plan.interval} subscription`,
+            quantity: 1,
+            unitAmount: plan.amount,
+            gstType: 'intra',
+            gstRate: 18, // 18% GST
+          },
+        ],
         actorId: 'subscription-renewal-worker',
       });
 
@@ -200,7 +223,11 @@ export class SubscriptionService {
 
       // Advance subscription period on success
       const nextPeriodStart = subscription.currentPeriodEnd;
-      const nextPeriodEnd = this.calculateNextPeriodEnd(nextPeriodStart, plan.interval, plan.intervalCount);
+      const nextPeriodEnd = this.calculateNextPeriodEnd(
+        nextPeriodStart,
+        plan.interval,
+        plan.intervalCount,
+      );
 
       await this.prisma.subscription.update({
         where: { id: subscriptionId },
@@ -217,6 +244,7 @@ export class SubscriptionService {
       });
 
       await this.auditService.log({
+        tenantId: subscription.tenantId,
         actor: 'subscription-renewal-worker',
         action: 'SUBSCRIPTION_RENEWED',
         resourceType: 'Subscription',
@@ -265,43 +293,48 @@ export class SubscriptionService {
     });
   }
 
-  async findById(id: string): Promise<SubscriptionWithPlan> {
-    const sub = await this.prisma.subscription.findUnique({
-      where: { id },
+  async findById(id: string, tenantId?: string): Promise<SubscriptionWithPlan> {
+    const sub = await this.prisma.subscription.findFirst({
+      where: { id, ...(tenantId && { tenantId }) },
       include: { plan: true },
     });
-    if (!sub) throw new NotFoundException({ message: 'Subscription not found', errorCode: ERROR_CODES.SUBSCRIPTION_NOT_FOUND });
+    if (!sub)
+      throw new NotFoundException({
+        message: 'Subscription not found',
+        errorCode: ERROR_CODES.SUBSCRIPTION_NOT_FOUND,
+      });
     return sub;
   }
 
-  async findByCustomer(customerId: string, page = 1, limit = 20) {
+  async findByCustomer(tenantId: string, customerId: string, page = 1, limit = 20) {
     const skip = (page - 1) * limit;
+    const where = { tenantId, customerId };
     const [data, total] = await this.prisma.$transaction([
       this.prisma.subscription.findMany({
-        where: { customerId },
+        where,
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
         include: { plan: true },
       }),
-      this.prisma.subscription.count({ where: { customerId } }),
+      this.prisma.subscription.count({ where }),
     ]);
     return { data, total };
   }
 
   // ── Private helpers ─────────────────────────────────────────────────────
 
-  private calculateNextPeriodEnd(
-    from: Date,
-    interval: PlanInterval,
-    count: number,
-  ): Date {
+  private calculateNextPeriodEnd(from: Date, interval: PlanInterval, count: number): Date {
     const d = dayjs(from);
     switch (interval) {
-      case 'DAILY':   return d.add(count, 'day').toDate();
-      case 'WEEKLY':  return d.add(count * 7, 'day').toDate();
-      case 'MONTHLY': return d.add(count, 'month').toDate();
-      case 'YEARLY':  return d.add(count, 'year').toDate();
+      case 'DAILY':
+        return d.add(count, 'day').toDate();
+      case 'WEEKLY':
+        return d.add(count * 7, 'day').toDate();
+      case 'MONTHLY':
+        return d.add(count, 'month').toDate();
+      case 'YEARLY':
+        return d.add(count, 'year').toDate();
     }
   }
 }

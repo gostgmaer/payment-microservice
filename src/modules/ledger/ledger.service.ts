@@ -23,6 +23,7 @@ import { Prisma, LedgerEntry, EntryType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 interface RecordPaymentInput {
+  tenantId: string;
   transactionId: string;
   amount: bigint;
   currency: string;
@@ -32,6 +33,7 @@ interface RecordPaymentInput {
 }
 
 interface RecordRefundInput {
+  tenantId: string;
   transactionId: string;
   amount: bigint;
   currency: string;
@@ -56,13 +58,12 @@ export class LedgerService {
    */
   async recordPayment(input: RecordPaymentInput): Promise<LedgerEntry[]> {
     const client = input.tx ?? this.prisma;
-    const baseAmount = input.taxAmount
-      ? input.amount - input.taxAmount
-      : input.amount;
+    const baseAmount = input.taxAmount ? input.amount - input.taxAmount : input.amount;
 
     const entries: Prisma.LedgerEntryCreateManyInput[] = [
       // Main payment entry
       {
+        tenantId: input.tenantId,
         transactionId: input.transactionId,
         type: EntryType.PAYMENT,
         debitAccount: 'ACCOUNTS_RECEIVABLE',
@@ -76,6 +77,7 @@ export class LedgerService {
     // Tax entry (if applicable)
     if (input.taxAmount && input.taxAmount > 0n) {
       entries.push({
+        tenantId: input.tenantId,
         transactionId: input.transactionId,
         type: EntryType.TAX,
         debitAccount: 'ACCOUNTS_RECEIVABLE',
@@ -109,6 +111,7 @@ export class LedgerService {
 
     const entries: Prisma.LedgerEntryCreateManyInput[] = [
       {
+        tenantId: input.tenantId,
         transactionId: input.transactionId,
         type: EntryType.REFUND,
         debitAccount: 'REVENUE',
@@ -118,6 +121,7 @@ export class LedgerService {
         description: input.description,
       },
       {
+        tenantId: input.tenantId,
         transactionId: input.transactionId,
         type: EntryType.REFUND,
         debitAccount: 'REFUND_LIABILITY',
@@ -129,9 +133,7 @@ export class LedgerService {
     ];
 
     await client.ledgerEntry.createMany({ data: entries });
-    this.logger.log(
-      `Recorded refund ledger entries for transaction ${input.transactionId}`,
-    );
+    this.logger.log(`Recorded refund ledger entries for transaction ${input.transactionId}`);
 
     return client.ledgerEntry.findMany({
       where: { transactionId: input.transactionId, type: EntryType.REFUND },
@@ -168,7 +170,7 @@ export class LedgerService {
     let credit = 0n;
 
     for (const entry of entries) {
-      if (entry.debitAccount === account)  debit  += entry.amount;
+      if (entry.debitAccount === account) debit += entry.amount;
       if (entry.creditAccount === account) credit += entry.amount;
     }
 

@@ -50,7 +50,7 @@ export class StripeProvider implements IPaymentProvider {
     // Amount must be integer (Stripe always expects smallest currency unit)
     const paymentIntent = await this.stripe.paymentIntents.create(
       {
-        amount: Number(input.amount),  // safe: all payments fit within Number.MAX_SAFE_INTEGER
+        amount: Number(input.amount), // safe: all payments fit within Number.MAX_SAFE_INTEGER
         currency: input.currency.toLowerCase(),
         metadata: {
           transactionId: input.transactionId,
@@ -78,9 +78,7 @@ export class StripeProvider implements IPaymentProvider {
   async verifyPayment(input: VerifyPaymentInput): Promise<VerifyPaymentResult> {
     this.logger.log(`Verifying Stripe PaymentIntent ${input.providerOrderId}`);
 
-    const paymentIntent = await this.stripe.paymentIntents.retrieve(
-      input.providerOrderId,
-    );
+    const paymentIntent = await this.stripe.paymentIntents.retrieve(input.providerOrderId);
 
     if (paymentIntent.status === 'succeeded') {
       return { isSuccess: true, metadata: { chargeId: paymentIntent.latest_charge as string } };
@@ -109,7 +107,12 @@ export class StripeProvider implements IPaymentProvider {
 
     return {
       providerRefundId: refund.id,
-      status: refund.status === 'succeeded' ? 'SUCCESS' : refund.status === 'pending' ? 'PENDING' : 'FAILED',
+      status:
+        refund.status === 'succeeded'
+          ? 'SUCCESS'
+          : refund.status === 'pending'
+            ? 'PENDING'
+            : 'FAILED',
     };
   }
 

@@ -38,10 +38,7 @@ describe('TransactionService', () => {
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        TransactionService,
-        { provide: PrismaService, useValue: mockPrismaService },
-      ],
+      providers: [TransactionService, { provide: PrismaService, useValue: mockPrismaService }],
     }).compile();
 
     service = module.get<TransactionService>(TransactionService);
@@ -56,6 +53,7 @@ describe('TransactionService', () => {
       mockPrismaService.transaction.create.mockResolvedValue(mockTransaction);
 
       const result = await service.create({
+        tenantId: 'tenant-001',
         orderId: 'order-001',
         idempotencyKey: 'raw-key-123',
         customerId: 'customer-001',
@@ -72,6 +70,7 @@ describe('TransactionService', () => {
       mockPrismaService.transaction.findUnique.mockResolvedValue(mockTransaction);
 
       const result = await service.create({
+        tenantId: 'tenant-001',
         orderId: 'order-001',
         idempotencyKey: 'raw-key-123',
         customerId: 'customer-001',
@@ -91,6 +90,7 @@ describe('TransactionService', () => {
 
       await expect(
         service.create({
+          tenantId: 'tenant-001',
           orderId: 'order-001',
           idempotencyKey: 'different-key',
           customerId: 'customer-001',

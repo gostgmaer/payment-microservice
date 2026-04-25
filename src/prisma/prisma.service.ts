@@ -69,7 +69,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     options?: { timeout?: number; maxWait?: number },
   ): Promise<T> {
     return this.$transaction(fn, {
-      timeout: options?.timeout ?? 10_000,  // 10s default
+      timeout: options?.timeout ?? 10_000, // 10s default
       maxWait: options?.maxWait ?? 5_000,
     });
   }

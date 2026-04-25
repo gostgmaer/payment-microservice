@@ -40,8 +40,8 @@ import { SubscriptionModule } from '../subscription/subscription.module';
           enableReadyCheck: false,
         },
         defaultJobOptions: {
-          removeOnComplete: { count: 1000 },  // keep last 1000 completed jobs
-          removeOnFail: { count: 5000 },      // keep last 5000 failed jobs (for inspection)
+          removeOnComplete: { count: 1000 }, // keep last 1000 completed jobs
+          removeOnFail: { count: 5000 }, // keep last 5000 failed jobs (for inspection)
         },
       }),
     }),
@@ -78,10 +78,7 @@ import { SubscriptionModule } from '../subscription/subscription.module';
     PaymentAttemptModule,
     forwardRef(() => SubscriptionModule),
   ],
-  providers: [
-    PaymentProcessor,
-    SubscriptionRenewalProcessor,
-  ],
+  providers: [PaymentProcessor, SubscriptionRenewalProcessor],
   exports: [BullModule],
 })
 export class EventsModule {}

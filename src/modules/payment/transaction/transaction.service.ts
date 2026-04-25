@@ -7,18 +7,14 @@
  *  - SELECT … FOR UPDATE locking to prevent race conditions
  */
 
-import {
-  Injectable,
-  NotFoundException,
-  ConflictException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, Logger } from '@nestjs/common';
 import { Prisma, Transaction, TransactionStatus } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { hashIdempotencyKey } from '../../../common/utils/crypto.util';
 import { ERROR_CODES } from '../../../common/constants/error-codes.constant';
 
 export interface CreateTransactionDto {
+  tenantId: string;
   orderId: string;
   idempotencyKey: string;
   customerId: string;
@@ -42,9 +38,9 @@ export class TransactionService {
   async create(dto: CreateTransactionDto): Promise<Transaction> {
     const hashedKey = hashIdempotencyKey(dto.idempotencyKey);
 
-    // Check for existing idempotency key (same request retried)
+    // Check for existing idempotency key (same request retried) — scoped per tenant
     const existing = await this.prisma.transaction.findUnique({
-      where: { idempotencyKey: hashedKey },
+      where: { tenantId_idempotencyKey: { tenantId: dto.tenantId, idempotencyKey: hashedKey } },
     });
 
     if (existing) {
@@ -55,6 +51,7 @@ export class TransactionService {
     try {
       return await this.prisma.transaction.create({
         data: {
+          tenantId: dto.tenantId,
           orderId: dto.orderId,
           idempotencyKey: hashedKey,
           customerId: dto.customerId,
@@ -62,7 +59,7 @@ export class TransactionService {
           currency: dto.currency,
           invoiceId: dto.invoiceId ?? null,
           status: TransactionStatus.PENDING,
-          metadata: dto.metadata as Prisma.JsonObject ?? Prisma.JsonNull,
+          metadata: (dto.metadata as Prisma.JsonObject) ?? Prisma.JsonNull,
         },
       });
     } catch (err) {
@@ -76,19 +73,25 @@ export class TransactionService {
     }
   }
 
-  /** Find transaction by ID — throws if not found. */
-  async findById(id: string): Promise<Transaction> {
-    const tx = await this.prisma.transaction.findUnique({
-      where: { id },
+  /** Find transaction by ID — throws if not found. Scoped to tenant. */
+  async findById(id: string, tenantId?: string): Promise<Transaction> {
+    const tx = await this.prisma.transaction.findFirst({
+      where: { id, ...(tenantId && { tenantId }) },
       include: { attempts: true, invoice: true },
     });
-    if (!tx) throw new NotFoundException({ message: 'Transaction not found', errorCode: ERROR_CODES.PAYMENT_NOT_FOUND });
+    if (!tx)
+      throw new NotFoundException({
+        message: 'Transaction not found',
+        errorCode: ERROR_CODES.PAYMENT_NOT_FOUND,
+      });
     return tx;
   }
 
-  /** Find transaction by order ID. */
-  async findByOrderId(orderId: string): Promise<Transaction | null> {
-    return this.prisma.transaction.findUnique({ where: { orderId } });
+  /** Find transaction by order ID — scoped to tenant. */
+  async findByOrderId(tenantId: string, orderId: string): Promise<Transaction | null> {
+    return this.prisma.transaction.findUnique({
+      where: { tenantId_orderId: { tenantId, orderId } },
+    });
   }
 
   /**
@@ -114,22 +117,24 @@ export class TransactionService {
     });
   }
 
-  /** Paginated list by customer. */
+  /** Paginated list by customer — scoped to tenant. */
   async findByCustomer(
+    tenantId: string,
     customerId: string,
     page = 1,
     limit = 20,
   ): Promise<{ data: Transaction[]; total: number }> {
     const skip = (page - 1) * limit;
+    const where = { tenantId, customerId };
     const [data, total] = await this.prisma.$transaction([
       this.prisma.transaction.findMany({
-        where: { customerId },
+        where,
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
         include: { attempts: true },
       }),
-      this.prisma.transaction.count({ where: { customerId } }),
+      this.prisma.transaction.count({ where }),
     ]);
     return { data, total };
   }

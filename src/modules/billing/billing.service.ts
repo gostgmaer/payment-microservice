@@ -11,12 +11,7 @@
  * All amounts stored as BigInt in smallest currency unit.
  */
 
-import {
-  Injectable,
-  Logger,
-  NotFoundException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { Prisma, Invoice, InvoiceItem, InvoiceStatus } from '@prisma/client';
 import Decimal from 'decimal.js';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -35,6 +30,7 @@ export interface InvoiceItemInput {
 }
 
 export interface CreateInvoiceDto {
+  tenantId: string;
   customerId: string;
   currency: string;
   items: InvoiceItemInput[];
@@ -56,7 +52,7 @@ export class BillingService {
 
   /** Create invoice in DRAFT status with GST-calculated line items. */
   async createInvoice(dto: CreateInvoiceDto): Promise<InvoiceWithItems> {
-    const invoiceNumber = await this.generateInvoiceNumber();
+    const invoiceNumber = await this.generateInvoiceNumber(dto.tenantId);
 
     // ── Calculate line items + taxes ──────────────────────────────────────
     const processedItems = dto.items.map((item) => this.calculateItem(item));
@@ -68,6 +64,7 @@ export class BillingService {
       const inv = await tx.invoice.create({
         data: {
           invoiceNumber,
+          tenantId: dto.tenantId,
           customerId: dto.customerId,
           currency: dto.currency,
           subtotal,
@@ -99,6 +96,7 @@ export class BillingService {
     });
 
     await this.auditService.log({
+      tenantId: dto.tenantId,
       actor: dto.actorId,
       action: 'INVOICE_CREATED',
       resourceType: 'Invoice',
@@ -131,6 +129,7 @@ export class BillingService {
     });
 
     await this.auditService.log({
+      tenantId: invoice.tenantId,
       actor: actorId,
       action: 'INVOICE_ISSUED',
       resourceType: 'Invoice',
@@ -165,6 +164,7 @@ export class BillingService {
     });
 
     await this.auditService.log({
+      tenantId: invoice.tenantId,
       actor: actorId,
       action: 'INVOICE_VOIDED',
       resourceType: 'Invoice',
@@ -179,21 +179,26 @@ export class BillingService {
       where: { id },
       include: { items: true },
     });
-    if (!invoice) throw new NotFoundException({ message: 'Invoice not found', errorCode: ERROR_CODES.INVOICE_NOT_FOUND });
+    if (!invoice)
+      throw new NotFoundException({
+        message: 'Invoice not found',
+        errorCode: ERROR_CODES.INVOICE_NOT_FOUND,
+      });
     return invoice;
   }
 
-  async findByCustomer(customerId: string, page = 1, limit = 20) {
+  async findByCustomer(tenantId: string, customerId: string, page = 1, limit = 20) {
     const skip = (page - 1) * limit;
+    const where = { tenantId, customerId };
     const [data, total] = await this.prisma.$transaction([
       this.prisma.invoice.findMany({
-        where: { customerId },
+        where,
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
         include: { items: true },
       }),
-      this.prisma.invoice.count({ where: { customerId } }),
+      this.prisma.invoice.count({ where }),
     ]);
     return { data, total };
   }
@@ -253,11 +258,11 @@ export class BillingService {
     return BigInt(result.toString());
   }
 
-  private async generateInvoiceNumber(): Promise<string> {
-    // Format: INV-YYYYMM-XXXXXXXX (e.g. INV-202404-00000001)
+  private async generateInvoiceNumber(tenantId: string): Promise<string> {
+    // Format: INV-YYYYMM-XXXXXXXX (e.g. INV-202404-00000001) — sequential per tenant
     const now = new Date();
     const prefix = `INV-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const count = await this.prisma.invoice.count();
+    const count = await this.prisma.invoice.count({ where: { tenantId } });
     return `${prefix}-${String(count + 1).padStart(8, '0')}`;
   }
 }

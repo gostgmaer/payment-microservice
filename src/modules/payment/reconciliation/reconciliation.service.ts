@@ -48,7 +48,7 @@ export class ReconciliationService {
       RECONCILIATION_LOCK,
       '1',
       'EX',
-      300,  // 5 min TTL
+      300, // 5 min TTL
       'NX',
     );
 
@@ -80,6 +80,7 @@ export class ReconciliationService {
         for (const attempt of tx.attempts) {
           try {
             const result = await this.orchestrator.verifyPayment({
+              tenantId: tx.tenantId,
               transactionId: tx.id,
               attemptId: attempt.id,
               actorId: 'reconciliation-worker',

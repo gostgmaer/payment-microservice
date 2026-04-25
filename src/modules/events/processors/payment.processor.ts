@@ -38,10 +38,11 @@ export class PaymentProcessor extends WorkerHost {
   }
 
   private async processPayment(job: Job<PaymentJobData>): Promise<void> {
-    const { transactionId, attemptId } = job.data;
+    const { tenantId, transactionId, attemptId } = job.data;
     this.logger.log(`Verifying payment for transaction ${transactionId}`);
 
     await this.orchestrator.verifyPayment({
+      tenantId,
       transactionId,
       attemptId,
       providerPaymentId: job.data.providerPaymentId,

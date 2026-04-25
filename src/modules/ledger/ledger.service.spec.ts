@@ -35,6 +35,7 @@ describe('LedgerService', () => {
       mockPrismaService.ledgerEntry.findMany.mockResolvedValue([]);
 
       await service.recordPayment({
+        tenantId: 'tenant-001',
         transactionId: 'tx-1',
         amount: BigInt(49900),
         currency: 'INR',
@@ -53,6 +54,7 @@ describe('LedgerService', () => {
       mockPrismaService.ledgerEntry.findMany.mockResolvedValue([]);
 
       await service.recordPayment({
+        tenantId: 'tenant-001',
         transactionId: 'tx-1',
         amount: BigInt(49900),
         currency: 'INR',
@@ -74,6 +76,7 @@ describe('LedgerService', () => {
       mockPrismaService.ledgerEntry.findMany.mockResolvedValue([]);
 
       await service.recordRefund({
+        tenantId: 'tenant-001',
         transactionId: 'tx-1',
         amount: BigInt(49900),
         currency: 'INR',

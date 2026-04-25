@@ -4,9 +4,11 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { AppConfigService } from '../../config/app-config.service';
 
 export interface JwtPayload {
-  sub: string;          // user ID
+  sub: string; // user ID
+  tenantId: string; // tenant this user belongs to
   email?: string;
   roles?: string[];
+  permissions?: string[];
   iat?: number;
   exp?: number;
 }
