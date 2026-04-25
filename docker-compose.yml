@@ -63,12 +63,13 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://payment_user:payment_pass@postgres:5432/payment_db?schema=public
+      DATABASE_URL: postgresql://payment_user:payment_pass@postgres:5432/postgres?schema=payment
       REDIS_HOST: redis
       REDIS_PORT: 6379
       NODE_ENV: development
+      PORT: 4000
     ports:
-      - '3000:3000'
+      - '4000:4000'
     depends_on:
       postgres:
         condition: service_healthy
@@ -76,6 +77,7 @@ services:
         condition: service_healthy
     networks:
       - payment-net
+      - easydev-net
     # Run Prisma migrations on container start, then launch app
     command: >
       sh -c "npx prisma migrate deploy && node dist/main"
@@ -90,7 +92,7 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://payment_user:payment_pass@postgres:5432/payment_db?schema=public
+      DATABASE_URL: postgresql://payment_user:payment_pass@postgres:5432/postgres?schema=payment
       REDIS_HOST: redis
       REDIS_PORT: 6379
       NODE_ENV: development
@@ -101,4 +103,5 @@ services:
         condition: service_healthy
     networks:
       - payment-net
+      - easydev-net
     command: node dist/worker
