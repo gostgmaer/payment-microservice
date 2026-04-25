@@ -26,6 +26,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
 import { AuditService } from '../audit/audit.service';
 import { AppConfigService } from '../config/app-config.service';
+import { IamSettingsService } from '../iam/iam-settings.service';
 import { ERROR_CODES } from '../../common/constants/error-codes.constant';
 import { generateIdempotencyKey } from '../../common/utils/crypto.util';
 import * as dayjs from 'dayjs';
@@ -57,6 +58,7 @@ export class SubscriptionService {
     private readonly billingService: BillingService,
     private readonly auditService: AuditService,
     private readonly config: AppConfigService,
+    private readonly iamSettings: IamSettingsService,
   ) {}
 
   async createSubscription(dto: CreateSubscriptionDto): Promise<SubscriptionWithPlan> {
@@ -197,7 +199,8 @@ export class SubscriptionService {
     });
 
     try {
-      // Create invoice for this cycle
+      // Create invoice for this cycle — fetch GST config from IAM settings (per-tenant)
+      const gst = await this.iamSettings.getGstConfig(subscription.tenantId);
       const invoice = await this.billingService.createInvoice({
         tenantId: subscription.tenantId,
         customerId: subscription.customerId,
@@ -207,8 +210,8 @@ export class SubscriptionService {
             description: `${plan.name} — ${plan.interval} subscription`,
             quantity: 1,
             unitAmount: plan.amount,
-            gstType: 'intra',
-            gstRate: 18, // 18% GST
+            gstType: gst.gstType,
+            gstRate: gst.gstRate,
           },
         ],
         actorId: 'subscription-renewal-worker',

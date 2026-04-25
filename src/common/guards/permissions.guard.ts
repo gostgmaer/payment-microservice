@@ -3,7 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { PERMISSIONS_KEY } from '../decorators/require-permission.decorator';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { JwtPayload } from '../../modules/security/strategies/jwt.strategy';
-import { Permission, resolvePermissions } from '../rbac/permissions';
+import { Permission } from '../rbac/permissions';
 
 /**
  * PermissionsGuard — enforces fine-grained RBAC.
@@ -11,7 +11,8 @@ import { Permission, resolvePermissions } from '../rbac/permissions';
  * Flow:
  *  1. Skip if route is @Public().
  *  2. Read @RequirePermission(...) from the route / controller.
- *  3. Resolve the user's permissions from their JWT roles via ROLE_PERMISSIONS map.
+ *  3. Use the `permissions[]` array already embedded in the JWT by the IAM service.
+ *     The IAM service is the single source of truth for permission→role mapping.
  *  4. Verify ALL required permissions are present (AND logic).
  *  5. Throw 403 with detail of what was missing if not.
  *
@@ -41,7 +42,10 @@ export class PermissionsGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest<{ user: JwtPayload }>();
     const user = request.user;
-    const userPermissions = resolvePermissions(user?.roles ?? []);
+
+    // Use the permissions array from the JWT — issued and populated by the IAM service.
+    // Falls back to empty set if the JWT predates the permissions field.
+    const userPermissions = new Set<string>(user?.permissions ?? []);
 
     const missing = requiredPermissions.filter((p) => !userPermissions.has(p));
 
@@ -57,3 +61,4 @@ export class PermissionsGuard implements CanActivate {
     return true;
   }
 }
+

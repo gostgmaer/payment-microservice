@@ -19,6 +19,15 @@
  *   write  — POST / PATCH (create / update)
  *   delete — DELETE (cancel / void / deactivate)
  *   manage — full control (write + delete + admin read)
+ *
+ * ── IAM integration ──────────────────────────────────────────────────────────
+ * These strings are the canonical permission identifiers for this service.
+ * They are used in @RequirePermission() decorators and self-registered with
+ * the IAM service at startup via IamPermissionRegistrar (OnApplicationBootstrap).
+ *
+ * Role → permission mapping is managed entirely in the IAM service — NOT here.
+ * The IAM service embeds the resolved `permissions[]` array in every JWT, and
+ * PermissionsGuard reads from that array directly.
  */
 
 export const Permission = {
@@ -56,75 +65,3 @@ export const Permission = {
 } as const;
 
 export type Permission = (typeof Permission)[keyof typeof Permission];
-
-/**
- * Role → Permission mapping.
- *
- * Roles are set by your auth service in the JWT `roles[]` field.
- * Add / remove permissions here without touching guards or controllers.
- *
- * Built-in roles:
- *   customer  — end-user: manage own payments, subscriptions, invoices
- *   support   — read-only view of all records, no writes
- *   finance   — read all + void invoices + read ledger
- *   admin     — full access to everything
- */
-export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
-  customer: [
-    Permission.PAYMENT_READ,
-    Permission.PAYMENT_WRITE,
-    Permission.REFUND_READ,
-    Permission.REFUND_WRITE,
-    Permission.INVOICE_READ,
-    Permission.SUBSCRIPTION_READ,
-    Permission.SUBSCRIPTION_WRITE,
-    Permission.SUBSCRIPTION_CANCEL,
-    Permission.PLAN_READ,
-  ],
-
-  support: [
-    Permission.PAYMENT_READ,
-    Permission.REFUND_READ,
-    Permission.INVOICE_READ,
-    Permission.SUBSCRIPTION_READ,
-    Permission.PLAN_READ,
-    Permission.ADMIN_TRANSACTIONS,
-    Permission.ADMIN_REFUNDS,
-    Permission.ADMIN_INVOICES,
-    Permission.ADMIN_SUBSCRIPTIONS,
-    Permission.ADMIN_WEBHOOKS,
-    Permission.ADMIN_AUDIT,
-  ],
-
-  finance: [
-    Permission.PAYMENT_READ,
-    Permission.REFUND_READ,
-    Permission.INVOICE_READ,
-    Permission.INVOICE_VOID,
-    Permission.SUBSCRIPTION_READ,
-    Permission.PLAN_READ,
-    Permission.ADMIN_TRANSACTIONS,
-    Permission.ADMIN_REFUNDS,
-    Permission.ADMIN_INVOICES,
-    Permission.ADMIN_SUBSCRIPTIONS,
-    Permission.ADMIN_AUDIT,
-    Permission.ADMIN_LEDGER,
-  ],
-
-  admin: [
-    // Admin has every permission
-    ...Object.values(Permission),
-  ],
-};
-
-/**
- * Resolve the union of all permissions granted to a user's roles.
- */
-export function resolvePermissions(roles: string[]): Set<Permission> {
-  const granted = new Set<Permission>();
-  for (const role of roles) {
-    const perms = ROLE_PERMISSIONS[role] ?? [];
-    for (const p of perms) granted.add(p);
-  }
-  return granted;
-}

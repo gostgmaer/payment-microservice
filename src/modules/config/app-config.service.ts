@@ -115,4 +115,13 @@ export class AppConfigService {
   get reconciliationCron(): string {
     return this.config.get<string>('features.reconciliationCron', '0 2 * * *');
   }
+
+  // ── IAM / Auth service ────────────────────────────────────────────────────────────
+  /** Base URL of the IAM/auth microservice (e.g. http://iam-service:4000). */
+  get iamServiceUrl(): string {
+    return this.config.get<string>('iam.serviceUrl', '');
+  }
+  get iamServiceApiKey(): string {
+    return this.config.get<string>('iam.serviceApiKey', '');
+  }
 }

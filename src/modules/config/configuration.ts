@@ -69,4 +69,13 @@ export default () => ({
     reconciliationCron: process.env.RECONCILIATION_CRON ?? '0 2 * * *',
     bullmqEnabled: process.env.BULLMQ_ENABLED !== 'false',
   },
+
+  iam: {
+    // URL of the auth/IAM service — used to fetch per-tenant platform settings.
+    // Example: http://localhost:4000
+    serviceUrl: process.env.IAM_SERVICE_URL ?? '',
+    // Optional API key for service-to-service calls (only needed if the IAM
+    // service restricts its /settings/public endpoint in future).
+    serviceApiKey: process.env.IAM_SERVICE_API_KEY ?? '',
+  },
 });

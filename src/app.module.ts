@@ -35,6 +35,9 @@ import { BillingModule } from './modules/billing/billing.module';
 import { SubscriptionModule } from './modules/subscription/subscription.module';
 import { AdminModule } from './modules/admin/admin.module';
 
+// IAM integration (GST settings + permission self-registration)
+import { IamModule } from './modules/iam/iam.module';
+
 // Common
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { CorrelationIdInterceptor } from './common/interceptors/correlation-id.interceptor';
@@ -116,6 +119,10 @@ const conditionalModules = bullmqEnabled ? [EventsModule] : [];
     BillingModule,
     SubscriptionModule,
     AdminModule,
+
+    // ── IAM integration ─────────────────────────────────────────────────
+    // Runs IamPermissionRegistrar on boot + provides IamSettingsService globally
+    IamModule,
   ],
 
   providers: [
