@@ -279,9 +279,14 @@ model InvoiceItem {
 // ─── Subscription Models ─────────────────────────────────────────────────────
 
 /// Subscription plan definition.
+/// Plans are grouped under an Application from the IAM/auth service.
+/// applicationId is a cross-service reference — no FK constraint (different DB).
 model Plan {
   id            String       @id @default(uuid())
   tenantId      String
+  /// ID of the Application in the auth service this plan belongs to.
+  /// Use GET /subscriptions/plans?applicationId=xxx to list plans for one app.
+  applicationId String?
   name          String
   description   String?
   amount        BigInt       // recurring charge per interval
@@ -297,6 +302,7 @@ model Plan {
   subscriptions Subscription[]
 
   @@index([tenantId])
+  @@index([tenantId, applicationId])
 }
 
 /// Customer subscription — tracks lifecycle and renewal windows.

@@ -28,6 +28,12 @@ import { PlanService } from './plan.service';
 
 export class CreatePlanDto {
   @ApiProperty({ description: 'Tenant this plan belongs to' }) @IsString() tenantId: string;
+  @ApiPropertyOptional({
+    description: 'Application ID from the auth/IAM service to group plans under',
+  })
+  @IsOptional()
+  @IsString()
+  applicationId?: string;
   @ApiProperty() @IsString() name: string;
   @ApiPropertyOptional() @IsOptional() @IsString() description?: string;
   @ApiProperty({ description: 'Amount in smallest currency unit' })
@@ -71,18 +77,28 @@ export class SubscriptionController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Create a new subscription plan (admin)' })
   async createPlan(@Body() dto: CreatePlanDto) {
-    return this.planService.create({ ...dto, amount: BigInt(dto.amountRaw) });
+    return this.planService.create({
+      ...dto,
+      amount: BigInt(dto.amountRaw),
+      applicationId: dto.applicationId,
+    });
   }
 
   @Get('plans')
   @RequirePermission(Permission.PLAN_READ)
   @ApiOperation({ summary: 'List available subscription plans' })
   @ApiQuery({ name: 'includeInactive', required: false })
+  @ApiQuery({
+    name: 'applicationId',
+    required: false,
+    description: 'Filter plans by IAM application ID',
+  })
   async listPlans(
     @CurrentTenant() tenantId: string,
     @Query('includeInactive') includeInactive?: string,
+    @Query('applicationId') applicationId?: string,
   ) {
-    return this.planService.findAll(tenantId, includeInactive !== 'true');
+    return this.planService.findAll(tenantId, includeInactive !== 'true', applicationId);
   }
 
   @Get('plans/:id')

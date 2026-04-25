@@ -3,13 +3,15 @@
  * Plans are created by admins (API key auth) and consumed by subscription logic.
  */
 
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, Plan } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ERROR_CODES } from '../../common/constants/error-codes.constant';
 
 export interface CreatePlanDto {
   tenantId: string;
+  /** Cross-service reference to an Application in the auth/IAM service. */
+  applicationId?: string;
   name: string;
   description?: string;
   amount: bigint;
@@ -35,9 +37,13 @@ export class PlanService {
     });
   }
 
-  async findAll(tenantId: string, onlyActive = true): Promise<Plan[]> {
+  async findAll(tenantId: string, onlyActive = true, applicationId?: string): Promise<Plan[]> {
     return this.prisma.plan.findMany({
-      where: { tenantId, ...(onlyActive && { isActive: true }) },
+      where: {
+        tenantId,
+        ...(onlyActive && { isActive: true }),
+        ...(applicationId && { applicationId }),
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
