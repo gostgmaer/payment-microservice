@@ -19,6 +19,7 @@
     "strictPropertyInitialization": false,
     "forceConsistentCasingInFileNames": true,
     "noFallthroughCasesInSwitch": true,
+    "types": ["node"],
     "paths": {
       "@/*": ["./src/*"]
     }
