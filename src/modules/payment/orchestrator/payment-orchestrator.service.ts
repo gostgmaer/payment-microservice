@@ -14,8 +14,14 @@
  * the provider's server-side API or webhook.
  */
 
-import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
-import { Provider, TransactionStatus, AttemptStatus } from '@prisma/client';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import {
+  Provider,
+  Prisma,
+  TransactionStatus,
+  AttemptStatus,
+  SubscriptionStatus,
+} from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { TransactionService } from '../transaction/transaction.service';
 import { PaymentAttemptService } from '../attempt/payment-attempt.service';
@@ -25,6 +31,7 @@ import { AuditService } from '../../audit/audit.service';
 import { IdempotencyService } from '../../security/services/idempotency.service';
 import { AppConfigService } from '../../config/app-config.service';
 import { ERROR_CODES } from '../../../common/constants/error-codes.constant';
+import { SubscriptionService } from '../../subscription/subscription.service';
 
 export interface InitiatePaymentDto {
   tenantId: string;
@@ -69,6 +76,15 @@ export interface VerifyPaymentDto {
   actorId: string;
 }
 
+type BillingMetadata = {
+  billingMode?: string;
+  planId?: string;
+  customerEmail?: string;
+  productId?: string;
+  trialDays?: number;
+  [key: string]: unknown;
+};
+
 @Injectable()
 export class PaymentOrchestratorService {
   private readonly logger = new Logger(PaymentOrchestratorService.name);
@@ -82,6 +98,7 @@ export class PaymentOrchestratorService {
     private readonly auditService: AuditService,
     private readonly idempotencyService: IdempotencyService,
     private readonly config: AppConfigService,
+    private readonly subscriptionService: SubscriptionService,
   ) {}
 
   /**
@@ -200,6 +217,8 @@ export class PaymentOrchestratorService {
     this.logger.log(`Verifying attempt ${dto.attemptId} for transaction ${dto.transactionId}`);
 
     const attempt = await this.attemptService.findById(dto.attemptId);
+    const transaction = await this.transactionService.findById(dto.transactionId, dto.tenantId);
+    const transactionMetadata = this.asBillingMetadata(transaction.metadata);
 
     // Idempotency: already processed
     if (attempt.status === AttemptStatus.SUCCESS) {
@@ -222,6 +241,22 @@ export class PaymentOrchestratorService {
       await this.prisma.withTransaction(async (tx) => {
         // Mark attempt as SUCCESS (applies DB partial unique index guard)
         await this.attemptService.markSuccess(attempt.id, tx);
+
+        const mergedAttemptMetadata = this.mergeMetadata(
+          this.asBillingMetadata(attempt.metadata),
+          this.mergeMetadata(verifyResult.metadata, {
+            providerPaymentId: dto.providerPaymentId,
+          }),
+        );
+
+        await tx.paymentAttempt.update({
+          where: { id: attempt.id },
+          data: {
+            metadata: Object.keys(mergedAttemptMetadata).length
+              ? (mergedAttemptMetadata as Prisma.JsonObject)
+              : Prisma.JsonNull,
+          },
+        });
 
         // Mark all other attempts as FAILED
         await tx.paymentAttempt.updateMany({
@@ -248,6 +283,17 @@ export class PaymentOrchestratorService {
           currency: attempt.currency,
           description: `Payment received via ${attempt.provider}`,
           tx,
+        });
+
+        await this.syncRecurringSubscriptionOnSuccess({
+          tenantId: dto.tenantId,
+          transactionCustomerId: transaction.customerId,
+          transactionMetadata,
+          attemptProvider: attempt.provider,
+          attemptProviderOrderId: attempt.providerOrderId,
+          mergedAttemptMetadata,
+          tx,
+          actorId: dto.actorId,
         });
       });
 
@@ -280,5 +326,139 @@ export class PaymentOrchestratorService {
 
       return { success: false, transactionId: dto.transactionId };
     }
+  }
+
+  private async syncRecurringSubscriptionOnSuccess(input: {
+    tenantId: string;
+    transactionCustomerId: string;
+    transactionMetadata: BillingMetadata;
+    attemptProvider: Provider;
+    attemptProviderOrderId?: string | null;
+    mergedAttemptMetadata: Record<string, unknown>;
+    tx: Prisma.TransactionClient;
+    actorId: string;
+  }): Promise<void> {
+    if (input.transactionMetadata.billingMode !== 'subscription') return;
+    if (input.attemptProvider === Provider.CASH) return;
+
+    const planId =
+      typeof input.transactionMetadata.planId === 'string'
+        ? input.transactionMetadata.planId
+        : null;
+    if (!planId) {
+      this.logger.warn(
+        'Recurring payment verified without planId metadata; skipping subscription sync',
+      );
+      return;
+    }
+
+    const providerSubscriptionId = this.resolveProviderSubscriptionId(
+      input.attemptProvider,
+      input.attemptProviderOrderId,
+      input.mergedAttemptMetadata,
+    );
+    if (!providerSubscriptionId) {
+      this.logger.warn(
+        `Recurring payment verified for ${input.attemptProvider} without provider subscription id`,
+      );
+      return;
+    }
+
+    const periodStart = this.resolveDate(
+      input.mergedAttemptMetadata.currentPeriodStart,
+      input.mergedAttemptMetadata.periodStart,
+    );
+    const periodEnd = this.resolveDate(
+      input.mergedAttemptMetadata.currentPeriodEnd,
+      input.mergedAttemptMetadata.periodEnd,
+    );
+    const trialStart = this.resolveDate(input.mergedAttemptMetadata.trialStart);
+    const trialEnd = this.resolveDate(input.mergedAttemptMetadata.trialEnd);
+    const status = this.resolveSubscriptionStatus(
+      input.mergedAttemptMetadata.subscriptionStatus,
+      trialEnd,
+    );
+
+    if (!periodStart || !periodEnd) {
+      this.logger.warn(
+        `Recurring payment verified for ${providerSubscriptionId} without period bounds; skipping sync`,
+      );
+      return;
+    }
+
+    await this.subscriptionService.syncExternalSubscription(
+      {
+        tenantId: input.tenantId,
+        customerId: input.transactionCustomerId,
+        planId,
+        provider: input.attemptProvider,
+        providerSubscriptionId,
+        actorId: input.actorId,
+        status,
+        currentPeriodStart: periodStart,
+        currentPeriodEnd: periodEnd,
+        trialStart: trialStart ?? undefined,
+        trialEnd: trialEnd ?? undefined,
+        metadata: this.mergeMetadata(input.transactionMetadata, input.mergedAttemptMetadata),
+      },
+      input.tx,
+    );
+  }
+
+  private resolveProviderSubscriptionId(
+    provider: Provider,
+    providerOrderId: string | null | undefined,
+    metadata: Record<string, unknown>,
+  ): string | null {
+    const explicit = metadata.providerSubscriptionId;
+    if (typeof explicit === 'string' && explicit.length > 0) return explicit;
+    if (provider === Provider.RAZORPAY && providerOrderId?.startsWith('sub_')) {
+      return providerOrderId;
+    }
+    return null;
+  }
+
+  private resolveSubscriptionStatus(rawStatus: unknown, trialEnd: Date | null): SubscriptionStatus {
+    if (typeof rawStatus === 'string') {
+      const normalized = rawStatus.toUpperCase();
+      if (normalized === 'TRIALING') return 'TRIALING' as SubscriptionStatus;
+      if (normalized === 'ACTIVE') return 'ACTIVE' as SubscriptionStatus;
+      if (normalized === 'PAST_DUE') return 'PAST_DUE' as SubscriptionStatus;
+      if (normalized === 'CANCELLED') return 'CANCELLED' as SubscriptionStatus;
+      if (normalized === 'EXPIRED') return 'EXPIRED' as SubscriptionStatus;
+    }
+    return trialEnd && trialEnd > new Date() ? 'TRIALING' : 'ACTIVE';
+  }
+
+  private resolveDate(...values: unknown[]): Date | null {
+    for (const value of values) {
+      if (value instanceof Date) return value;
+      if (typeof value === 'number') {
+        const fromNumber = new Date(value > 10_000_000_000 ? value : value * 1000);
+        if (!Number.isNaN(fromNumber.getTime())) return fromNumber;
+      }
+      if (typeof value === 'string' && value.length > 0) {
+        const fromString = new Date(value);
+        if (!Number.isNaN(fromString.getTime())) return fromString;
+      }
+    }
+    return null;
+  }
+
+  private asBillingMetadata(value: unknown): BillingMetadata {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return value as BillingMetadata;
+    }
+    return {};
+  }
+
+  private mergeMetadata(
+    base: Record<string, unknown> | undefined,
+    extra: Record<string, unknown> | undefined,
+  ): Record<string, unknown> {
+    return {
+      ...(base ?? {}),
+      ...(extra ?? {}),
+    };
   }
 }

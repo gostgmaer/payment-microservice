@@ -4,6 +4,7 @@ import { WebhookController } from './webhook.controller';
 import { PaymentProviderModule } from '../provider/payment-provider.module';
 import { PaymentAttemptModule } from '../attempt/payment-attempt.module';
 import { AuditModule } from '../../audit/audit.module';
+import { SubscriptionModule } from '../../subscription/subscription.module';
 
 // PaymentOrchestratorModule is imported lazily via forwardRef to break
 // circular dependency (Orchestrator → Webhook → Orchestrator).
@@ -15,6 +16,7 @@ import { PaymentOrchestratorModule } from '../orchestrator/payment-orchestrator.
     PaymentProviderModule,
     PaymentAttemptModule,
     AuditModule,
+    SubscriptionModule,
     forwardRef(() => PaymentOrchestratorModule),
   ],
   controllers: [WebhookController],

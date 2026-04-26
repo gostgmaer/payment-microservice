@@ -6,6 +6,7 @@ import { PaymentAttemptModule } from '../attempt/payment-attempt.module';
 import { PaymentProviderModule } from '../provider/payment-provider.module';
 import { LedgerModule } from '../../ledger/ledger.module';
 import { AuditModule } from '../../audit/audit.module';
+import { SubscriptionModule } from '../../subscription/subscription.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { AuditModule } from '../../audit/audit.module';
     PaymentProviderModule,
     LedgerModule,
     AuditModule,
+    SubscriptionModule,
   ],
   controllers: [PaymentOrchestratorController],
   providers: [PaymentOrchestratorService],

@@ -21,6 +21,7 @@ import {
   Plan,
   CycleStatus,
   PlanInterval,
+  Provider,
 } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
@@ -38,6 +39,21 @@ export interface CreateSubscriptionDto {
   trialOverrideDays?: number;
   metadata?: Record<string, unknown>;
   actorId: string;
+}
+
+export interface SyncExternalSubscriptionDto {
+  tenantId: string;
+  customerId: string;
+  planId: string;
+  provider: Provider;
+  providerSubscriptionId: string;
+  actorId: string;
+  status: SubscriptionStatus;
+  currentPeriodStart: Date;
+  currentPeriodEnd: Date;
+  trialStart?: Date;
+  trialEnd?: Date;
+  metadata?: Record<string, unknown>;
 }
 
 export interface CancelSubscriptionDto {
@@ -62,17 +78,7 @@ export class SubscriptionService {
   ) {}
 
   async createSubscription(dto: CreateSubscriptionDto): Promise<SubscriptionWithPlan> {
-    const plan = await this.prisma.plan.findUnique({ where: { id: dto.planId } });
-    if (!plan)
-      throw new NotFoundException({
-        message: 'Plan not found',
-        errorCode: ERROR_CODES.PLAN_NOT_FOUND,
-      });
-    if (!plan.isActive)
-      throw new BadRequestException({
-        message: 'Plan is inactive',
-        errorCode: ERROR_CODES.PLAN_INACTIVE,
-      });
+    const plan = await this.getActivePlanOrThrow(dto.planId);
 
     const trialDays = dto.trialOverrideDays ?? plan.trialDays;
     const now = new Date();
@@ -106,6 +112,140 @@ export class SubscriptionService {
 
     this.logger.log(`Subscription ${subscription.id} created for customer ${dto.customerId}`);
     return subscription;
+  }
+
+  async syncExternalSubscription(
+    dto: SyncExternalSubscriptionDto,
+    tx?: Prisma.TransactionClient,
+  ): Promise<SubscriptionWithPlan> {
+    const client = tx ?? this.prisma;
+    await this.getActivePlanOrThrow(dto.planId, client);
+
+    const metadata = this.mergeMetadata(dto.metadata, {
+      provider: dto.provider,
+      providerSubscriptionId: dto.providerSubscriptionId,
+      billingMode: 'provider-managed',
+    });
+
+    const existing = await client.subscription.findFirst({
+      where: {
+        tenantId: dto.tenantId,
+        metadata: {
+          path: ['providerSubscriptionId'],
+          equals: dto.providerSubscriptionId,
+        },
+      },
+      include: { plan: true },
+    });
+
+    if (existing) {
+      const updated = await client.subscription.update({
+        where: { id: existing.id },
+        data: {
+          customerId: dto.customerId,
+          planId: dto.planId,
+          status: dto.status,
+          currentPeriodStart: dto.currentPeriodStart,
+          currentPeriodEnd: dto.currentPeriodEnd,
+          trialStart: dto.trialStart ?? null,
+          trialEnd: dto.trialEnd ?? null,
+          metadata: metadata as Prisma.JsonObject,
+        },
+        include: { plan: true },
+      });
+
+      if (!tx) {
+        await this.auditService.log({
+          tenantId: dto.tenantId,
+          actor: dto.actorId,
+          action: 'SUBSCRIPTION_SYNCED',
+          resourceType: 'Subscription',
+          resourceId: updated.id,
+          newState: {
+            provider: dto.provider,
+            providerSubscriptionId: dto.providerSubscriptionId,
+            status: dto.status,
+          },
+        });
+      }
+
+      return updated;
+    }
+
+    const created = await client.subscription.create({
+      data: {
+        tenantId: dto.tenantId,
+        customerId: dto.customerId,
+        planId: dto.planId,
+        status: dto.status,
+        currentPeriodStart: dto.currentPeriodStart,
+        currentPeriodEnd: dto.currentPeriodEnd,
+        trialStart: dto.trialStart ?? null,
+        trialEnd: dto.trialEnd ?? null,
+        metadata: metadata as Prisma.JsonObject,
+      },
+      include: { plan: true },
+    });
+
+    if (!tx) {
+      await this.auditService.log({
+        tenantId: dto.tenantId,
+        actor: dto.actorId,
+        action: 'SUBSCRIPTION_CREATED',
+        resourceType: 'Subscription',
+        resourceId: created.id,
+        newState: {
+          provider: dto.provider,
+          providerSubscriptionId: dto.providerSubscriptionId,
+          planId: dto.planId,
+          status: dto.status,
+        },
+      });
+    }
+
+    return created;
+  }
+
+  async markExternalSubscriptionStatus(
+    tenantId: string,
+    providerSubscriptionId: string,
+    status: SubscriptionStatus,
+    actorId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<SubscriptionWithPlan | null> {
+    const client = tx ?? this.prisma;
+    const existing = await client.subscription.findFirst({
+      where: {
+        tenantId,
+        metadata: {
+          path: ['providerSubscriptionId'],
+          equals: providerSubscriptionId,
+        },
+      },
+      include: { plan: true },
+    });
+
+    if (!existing) return null;
+
+    const updated = await client.subscription.update({
+      where: { id: existing.id },
+      data: { status },
+      include: { plan: true },
+    });
+
+    if (!tx) {
+      await this.auditService.log({
+        tenantId,
+        actor: actorId,
+        action: 'SUBSCRIPTION_STATUS_UPDATED',
+        resourceType: 'Subscription',
+        resourceId: updated.id,
+        oldState: { status: existing.status },
+        newState: { status },
+      });
+    }
+
+    return updated;
   }
 
   async cancelSubscription(dto: CancelSubscriptionDto): Promise<Subscription> {
@@ -339,5 +479,30 @@ export class SubscriptionService {
       case 'YEARLY':
         return d.add(count, 'year').toDate();
     }
+  }
+
+  private async getActivePlanOrThrow(id: string, client: Prisma.TransactionClient | PrismaService = this.prisma) {
+    const plan = await client.plan.findUnique({ where: { id } });
+    if (!plan)
+      throw new NotFoundException({
+        message: 'Plan not found',
+        errorCode: ERROR_CODES.PLAN_NOT_FOUND,
+      });
+    if (!plan.isActive)
+      throw new BadRequestException({
+        message: 'Plan is inactive',
+        errorCode: ERROR_CODES.PLAN_INACTIVE,
+      });
+    return plan;
+  }
+
+  private mergeMetadata(
+    metadata: Record<string, unknown> | undefined,
+    extra: Record<string, unknown>,
+  ): Record<string, unknown> {
+    return {
+      ...(metadata ?? {}),
+      ...extra,
+    };
   }
 }

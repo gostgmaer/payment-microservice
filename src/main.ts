@@ -13,13 +13,13 @@
  */
 
 import { NestFactory, Reflector } from '@nestjs/core';
-import { ClassSerializerInterceptor, ValidationPipe, VersioningType } from '@nestjs/common';
+import { ClassSerializerInterceptor, Logger as NestLogger, ValidationPipe, VersioningType } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any
 const compression = require('compression') as (...args: any[]) => any;
-import { Logger } from 'nestjs-pino';
+import { Logger as PinoLogger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -30,13 +30,17 @@ async function bootstrap() {
     bufferLogs: true,
   });
 
-  // ── Pino structured logger ──────────────────────────────────────────────
-  app.useLogger(app.get(Logger));
-
   const configService = app.get(ConfigService);
   const port = configService.get<number>('PORT', 3000);
   const env = configService.get<string>('NODE_ENV', 'development');
   const apiPrefix = configService.get<string>('API_PREFIX', 'api/v1');
+  const structuredLoggingEnabled = configService.get<boolean>('app.structuredLoggingEnabled', false);
+
+  if (structuredLoggingEnabled) {
+    app.useLogger(app.get(PinoLogger));
+  }
+
+  const bootstrapLogger = structuredLoggingEnabled ? app.get(PinoLogger) : new NestLogger('Bootstrap');
 
   // ── Trust proxy (Nginx / AWS ALB / GCP LB) ─────────────────────────────
   const expressApp = app.getHttpAdapter().getInstance();
@@ -94,19 +98,31 @@ async function bootstrap() {
 
   // ── Start server ────────────────────────────────────────────────────────
   await app.listen(port);
-  app.get(Logger).log(`🚀 Payment Microservice running on port ${port} [${env}]`, 'Bootstrap');
+  if (structuredLoggingEnabled) {
+    bootstrapLogger.log(`🚀 Payment Microservice running on port ${port} [${env}]`, 'Bootstrap');
+  } else {
+    bootstrapLogger.log(`🚀 Payment Microservice running on port ${port} [${env}]`);
+  }
 
   // ── Graceful shutdown ───────────────────────────────────────────────────
   // NestJS calls app.close() which triggers onModuleDestroy hooks in
   // PrismaService and Redis — this ensures in-flight jobs complete cleanly.
   process.on('SIGTERM', async () => {
-    app.get(Logger).log('SIGTERM received — shutting down gracefully', 'Bootstrap');
+    if (structuredLoggingEnabled) {
+      bootstrapLogger.log('SIGTERM received — shutting down gracefully', 'Bootstrap');
+    } else {
+      bootstrapLogger.log('SIGTERM received — shutting down gracefully');
+    }
     await app.close();
     process.exit(0);
   });
 
   process.on('SIGINT', async () => {
-    app.get(Logger).log('SIGINT received — shutting down gracefully', 'Bootstrap');
+    if (structuredLoggingEnabled) {
+      bootstrapLogger.log('SIGINT received — shutting down gracefully', 'Bootstrap');
+    } else {
+      bootstrapLogger.log('SIGINT received — shutting down gracefully');
+    }
     await app.close();
     process.exit(0);
   });

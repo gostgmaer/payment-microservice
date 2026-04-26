@@ -21,20 +21,21 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   private readonly logger = new Logger(PrismaService.name);
 
   constructor(private readonly config: ConfigService) {
+    const enableDbQueryLogging = config.get('ENABLE_DB_QUERY_LOGGING') === 'true';
+
     super({
       log:
-        config.get('NODE_ENV') === 'development'
+        enableDbQueryLogging
           ? [
               { emit: 'event', level: 'query' },
-              { emit: 'event', level: 'warn' },
-              { emit: 'event', level: 'error' },
+              'warn',
+              'error',
             ]
-          : [{ emit: 'event', level: 'error' }],
+          : ['warn', 'error'],
       errorFormat: 'minimal',
     });
 
-    // Log slow queries in development
-    if (config.get('NODE_ENV') === 'development') {
+    if (enableDbQueryLogging) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (this as any).$on('query', (e: Prisma.QueryEvent) => {
         if (e.duration > 200) {

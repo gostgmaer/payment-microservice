@@ -27,47 +27,42 @@ async function main() {
   // ─── Plans ────────────────────────────────────────────────────────────────
   const plans = [
     {
-      id: 'plan_starter_monthly',
-      name: 'Starter Monthly',
-      description: 'Perfect for small businesses',
-      amount: BigInt(49900), // ₹499.00
+      id: 'plan_easydev_starter_inr_monthly',
+      tenantId: 'easydev',
+      applicationId: 'easydev-communication',
+      name: 'EasyDev Starter Monthly (INR)',
+      description: 'Starter recurring billing via INR providers',
+      amount: BigInt(199900), // ₹1,999.00
       currency: 'INR',
       interval: 'MONTHLY' as const,
       intervalCount: 1,
-      trialDays: 14,
+      trialDays: 3,
       isActive: true,
     },
     {
-      id: 'plan_starter_yearly',
-      name: 'Starter Yearly',
-      description: 'Save 20% with annual billing',
-      amount: BigInt(479000), // ₹4790.00 (≈ ₹399/mo)
-      currency: 'INR',
-      interval: 'YEARLY' as const,
-      intervalCount: 1,
-      trialDays: 14,
-      isActive: true,
-    },
-    {
-      id: 'plan_pro_monthly',
-      name: 'Pro Monthly',
-      description: 'For growing teams',
-      amount: BigInt(199900), // ₹1999.00
+      id: 'plan_easydev_growth_inr_monthly',
+      tenantId: 'easydev',
+      applicationId: 'easydev-communication',
+      name: 'EasyDev Growth Monthly (INR)',
+      description: 'Growth recurring billing via INR providers',
+      amount: BigInt(499900), // ₹4,999.00
       currency: 'INR',
       interval: 'MONTHLY' as const,
       intervalCount: 1,
-      trialDays: 7,
+      trialDays: 3,
       isActive: true,
     },
     {
-      id: 'plan_pro_yearly',
-      name: 'Pro Yearly',
-      description: 'Pro plan with 20% discount',
-      amount: BigInt(1919000), // ₹19190.00
+      id: 'plan_easydev_business_inr_monthly',
+      tenantId: 'easydev',
+      applicationId: 'easydev-communication',
+      name: 'EasyDev Business Monthly (INR)',
+      description: 'Business recurring billing via INR providers',
+      amount: BigInt(1299900), // ₹12,999.00
       currency: 'INR',
-      interval: 'YEARLY' as const,
+      interval: 'MONTHLY' as const,
       intervalCount: 1,
-      trialDays: 7,
+      trialDays: 3,
       isActive: true,
     },
   ];
@@ -76,7 +71,18 @@ async function main() {
     await prisma.plan.upsert({
       where: { id: plan.id },
       create: plan,
-      update: { amount: plan.amount, isActive: plan.isActive },
+      update: {
+        tenantId: plan.tenantId,
+        applicationId: plan.applicationId,
+        name: plan.name,
+        description: plan.description,
+        amount: plan.amount,
+        currency: plan.currency,
+        interval: plan.interval,
+        intervalCount: plan.intervalCount,
+        trialDays: plan.trialDays,
+        isActive: plan.isActive,
+      },
     });
   }
 

@@ -53,6 +53,9 @@ export class StripeProvider implements IPaymentProvider {
     // (e.g. web-agency-backend-api checkout adapter). Requires successUrl and
     // cancelUrl to be present in metadata.
     if (input.metadata?.checkoutMode === true) {
+      if (input.metadata?.recurringMode === true) {
+        return this.createRecurringCheckoutSession(input);
+      }
       return this.createCheckoutSession(input);
     }
 
@@ -138,6 +141,82 @@ export class StripeProvider implements IPaymentProvider {
     };
   }
 
+  private async createRecurringCheckoutSession(
+    input: CreatePaymentInput,
+  ): Promise<ProviderPaymentResponse> {
+    this.logger.log(`Creating Stripe subscription Checkout Session for ${input.transactionId}`);
+
+    const successUrl = String(input.metadata?.successUrl ?? '');
+    const cancelUrl = String(input.metadata?.cancelUrl ?? '');
+    const customerEmail = String(input.metadata?.customerEmail ?? '');
+    const productName = String(input.metadata?.productName ?? 'Product');
+    const interval = this.resolveStripeInterval(String(input.metadata?.interval ?? 'month'));
+    const intervalCount = this.resolveIntervalCount(input.metadata?.intervalCount);
+    const trialDays = this.resolveTrialDays(input.metadata?.trialDays);
+    const planId = String(input.metadata?.planId ?? '');
+    const productId = String(input.metadata?.productId ?? '');
+
+    if (!successUrl || !cancelUrl) {
+      throw new Error('Stripe subscription Checkout requires successUrl and cancelUrl in metadata');
+    }
+
+    const session = await this.stripe.checkout.sessions.create(
+      {
+        mode: 'subscription',
+        payment_method_types: ['card'],
+        line_items: [
+          {
+            price_data: {
+              currency: input.currency.toLowerCase(),
+              unit_amount: Number(input.amount),
+              recurring: {
+                interval,
+                interval_count: intervalCount,
+              },
+              product_data: { name: productName },
+            },
+            quantity: 1,
+          },
+        ],
+        success_url: successUrl,
+        cancel_url: cancelUrl,
+        ...(customerEmail ? { customer_email: customerEmail } : {}),
+        metadata: {
+          transactionId: input.transactionId,
+          customerId: input.customerId,
+          planId,
+          productId,
+          customerEmail,
+          recurringMode: 'true',
+          idempotencyKey: input.idempotencyKey,
+        },
+        subscription_data: {
+          ...(trialDays > 0 ? { trial_period_days: trialDays } : {}),
+          metadata: {
+            transactionId: input.transactionId,
+            customerId: input.customerId,
+            planId,
+            productId,
+            customerEmail,
+            recurringMode: 'true',
+          },
+        },
+      },
+      { idempotencyKey: input.idempotencyKey },
+    );
+
+    return {
+      providerOrderId: session.id,
+      sessionUrl: session.url ?? undefined,
+      provider: Provider.STRIPE,
+      method: 'subscription',
+      metadata: {
+        sessionId: session.id,
+        recurringMode: true,
+      },
+    };
+  }
+
   async verifyPayment(input: VerifyPaymentInput): Promise<VerifyPaymentResult> {
     // ── Checkout Session verification ─────────────────────────────────────
     // Stripe session IDs start with 'cs_'
@@ -145,6 +224,33 @@ export class StripeProvider implements IPaymentProvider {
       this.logger.log(`Verifying Stripe Checkout Session ${input.providerOrderId}`);
       try {
         const session = await this.stripe.checkout.sessions.retrieve(input.providerOrderId);
+        if (
+          session.mode === 'subscription' &&
+          session.status === 'complete' &&
+          ['paid', 'no_payment_required'].includes(session.payment_status)
+        ) {
+          const subscriptionId =
+            typeof session.subscription === 'string' ? session.subscription : session.subscription?.id;
+          const subscription = subscriptionId
+            ? await this.stripe.subscriptions.retrieve(subscriptionId)
+            : null;
+
+          return {
+            isSuccess: true,
+            metadata: {
+              sessionId: session.id,
+              paymentIntentId: String(session.payment_intent ?? ''),
+              providerSubscriptionId: subscription?.id ?? subscriptionId,
+              subscriptionId: subscription?.id ?? subscriptionId,
+              subscriptionStatus: this.mapSubscriptionStatus(subscription?.status),
+              currentPeriodStart: subscription?.current_period_start,
+              currentPeriodEnd: subscription?.current_period_end,
+              trialStart: subscription?.trial_start,
+              trialEnd: subscription?.trial_end,
+              customerId: typeof session.customer === 'string' ? session.customer : undefined,
+            },
+          };
+        }
         if (session.payment_status === 'paid') {
           return {
             isSuccess: true,
@@ -178,6 +284,34 @@ export class StripeProvider implements IPaymentProvider {
         paymentIntent.last_payment_error?.message ??
         `PaymentIntent status: ${paymentIntent.status}`,
     };
+  }
+
+  private resolveStripeInterval(
+    interval: string,
+  ): Stripe.Checkout.SessionCreateParams.LineItem.PriceData.Recurring.Interval {
+    if (interval === 'day') return 'day';
+    if (interval === 'week') return 'week';
+    if (interval === 'year') return 'year';
+    return 'month';
+  }
+
+  private resolveIntervalCount(rawValue: unknown): number {
+    const value = Number(rawValue);
+    return Number.isFinite(value) && value > 0 ? value : 1;
+  }
+
+  private resolveTrialDays(rawValue: unknown): number {
+    const value = Number(rawValue);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  }
+
+  private mapSubscriptionStatus(status?: Stripe.Subscription.Status): string | undefined {
+    if (!status) return undefined;
+    if (status === 'trialing') return 'TRIALING';
+    if (status === 'active') return 'ACTIVE';
+    if (status === 'past_due' || status === 'unpaid' || status === 'incomplete') return 'PAST_DUE';
+    if (status === 'canceled' || status === 'incomplete_expired') return 'CANCELLED';
+    return undefined;
   }
 
   async refundPayment(input: RefundInput): Promise<RefundProviderResponse> {

@@ -58,29 +58,34 @@ const conditionalModules = bullmqEnabled ? [EventsModule] : [];
     // ── Structured logging ──────────────────────────────────────────────
     LoggerModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        pinoHttp: {
-          level: config.get<string>('LOG_LEVEL', 'info'),
-          // Redact sensitive fields from logs
-          redact: {
-            paths: [
-              'req.headers.authorization',
-              'req.headers["x-api-key"]',
-              'req.body.cardNumber',
-              'req.body.cvv',
-              '*.clientSecret',
-            ],
-            remove: true,
+      useFactory: (config: ConfigService) => {
+        const structuredLoggingEnabled = config.get<boolean>('app.structuredLoggingEnabled', false);
+
+        return {
+          pinoHttp: {
+            level: config.get<string>('app.logLevel', 'info'),
+            autoLogging: structuredLoggingEnabled,
+            // Redact sensitive fields from logs
+            redact: {
+              paths: [
+                'req.headers.authorization',
+                'req.headers["x-api-key"]',
+                'req.body.cardNumber',
+                'req.body.cvv',
+                '*.clientSecret',
+              ],
+              remove: true,
+            },
+            transport:
+              structuredLoggingEnabled && config.get<string>('app.env', 'development') !== 'production'
+                ? { target: 'pino-pretty', options: { colorize: true, singleLine: false } }
+                : undefined,
+            customProps: () => ({ service: 'payment-microservice' }),
+            // Attach correlation ID from header if present
+            genReqId: (req) => (req.headers['x-correlation-id'] as string) ?? crypto.randomUUID(),
           },
-          transport:
-            config.get('NODE_ENV') !== 'production'
-              ? { target: 'pino-pretty', options: { colorize: true, singleLine: false } }
-              : undefined,
-          customProps: () => ({ service: 'payment-microservice' }),
-          // Attach correlation ID from header if present
-          genReqId: (req) => (req.headers['x-correlation-id'] as string) ?? crypto.randomUUID(),
-        },
-      }),
+        };
+      },
     }),
 
     // ── Rate limiting ───────────────────────────────────────────────────

@@ -19,6 +19,8 @@ import { AppConfigService } from './app-config.service';
           .valid('development', 'test', 'staging', 'production')
           .default('development'),
         PORT: Joi.number().default(3000),
+        ENABLE_PINO_LOGGING: Joi.string().valid('true', 'false').default('false'),
+        LOG_LEVEL: Joi.string().default('info'),
         DATABASE_URL: Joi.string().required(),
         REDIS_HOST: Joi.string().default('localhost'),
         REDIS_PORT: Joi.number().default(6379),

@@ -4,6 +4,7 @@
  */
 
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { LoggerModule } from 'nestjs-pino';
 import { AppConfigModule } from './modules/config/app-config.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -21,7 +22,24 @@ import { SubscriptionModule } from './modules/subscription/subscription.module';
 @Module({
   imports: [
     AppConfigModule,
-    LoggerModule.forRoot({ pinoHttp: { level: 'info' } }),
+    LoggerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => {
+        const structuredLoggingEnabled = config.get<boolean>('app.structuredLoggingEnabled', false);
+
+        return {
+          pinoHttp: {
+            level: config.get<string>('app.logLevel', 'info'),
+            autoLogging: false,
+            transport:
+              structuredLoggingEnabled && config.get<string>('app.env', 'development') !== 'production'
+                ? { target: 'pino-pretty', options: { colorize: true, singleLine: false } }
+                : undefined,
+            customProps: () => ({ service: 'payment-worker' }),
+          },
+        };
+      },
+    }),
     PrismaModule,
     SecurityModule,
     AuditModule,

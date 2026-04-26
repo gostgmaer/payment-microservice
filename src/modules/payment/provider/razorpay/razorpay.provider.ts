@@ -49,6 +49,10 @@ export class RazorpayProvider implements IPaymentProvider {
   }
 
   async createPayment(input: CreatePaymentInput): Promise<ProviderPaymentResponse> {
+    if (input.metadata?.recurringMode === true) {
+      return this.createRecurringSubscription(input);
+    }
+
     this.logger.log(`Creating Razorpay order for transaction ${input.transactionId}`);
 
     // Razorpay amount is always in paise (smallest unit) — already in BigInt
@@ -70,8 +74,105 @@ export class RazorpayProvider implements IPaymentProvider {
     };
   }
 
+  private async createRecurringSubscription(
+    input: CreatePaymentInput,
+  ): Promise<ProviderPaymentResponse> {
+    this.logger.log(`Creating Razorpay subscription for transaction ${input.transactionId}`);
+
+    const plan = await this.razorpay.plans.create({
+      period: this.mapPlanPeriod(String(input.metadata?.interval ?? 'month')),
+      interval: this.resolveIntervalCount(input.metadata?.intervalCount),
+      item: {
+        name: String(input.metadata?.productName ?? 'Subscription'),
+        amount: Number(input.amount),
+        currency: input.currency.toUpperCase(),
+        description: `${String(input.metadata?.productName ?? 'Subscription')} recurring billing`,
+      },
+      notes: {
+        transactionId: input.transactionId,
+        customerId: input.customerId,
+      },
+    });
+
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const trialDays = this.resolveTrialDays(input.metadata?.trialDays);
+    const startAt = trialDays > 0 ? nowSeconds + trialDays * 24 * 60 * 60 : nowSeconds;
+    const subscription = await this.razorpay.subscriptions.create({
+      plan_id: plan.id,
+      total_count: this.resolveTotalCount(),
+      quantity: 1,
+      customer_notify: 0,
+      start_at: startAt,
+      notes: {
+        transactionId: input.transactionId,
+        customerId: input.customerId,
+        planId: String(input.metadata?.planId ?? ''),
+        productId: String(input.metadata?.productId ?? ''),
+        customerEmail: String(input.metadata?.customerEmail ?? ''),
+        tenantId: String(input.metadata?.tenantId ?? 'easydev'),
+      },
+    });
+
+    return {
+      providerOrderId: subscription.id,
+      provider: Provider.RAZORPAY,
+      method: 'subscription',
+      metadata: {
+        providerSubscriptionId: subscription.id,
+        razorpayPlanId: plan.id,
+        recurringMode: true,
+        subscriptionStatus: this.mapSubscriptionStatus(subscription.status),
+        trialEnd: startAt,
+        currentPeriodStart: startAt,
+      },
+    };
+  }
+
   async verifyPayment(input: VerifyPaymentInput): Promise<VerifyPaymentResult> {
     this.logger.log(`Verifying Razorpay payment for order ${input.providerOrderId}`);
+
+    if (input.providerOrderId.startsWith('sub_')) {
+      if (input.providerPaymentId && input.providerSignature) {
+        const body = `${input.providerPaymentId}|${input.providerOrderId}`;
+        const expected = createHmac('sha256', this.config.razorpayKeySecret)
+          .update(body)
+          .digest('hex');
+
+        const expectedBuf = Buffer.from(expected);
+        const receivedBuf = Buffer.from(input.providerSignature);
+        const isValid =
+          expectedBuf.length === receivedBuf.length && timingSafeEqual(expectedBuf, receivedBuf);
+
+        if (!isValid) {
+          return { isSuccess: false, failureReason: 'Subscription signature verification failed' };
+        }
+      }
+
+      const subscription = await this.razorpay.subscriptions.fetch(input.providerOrderId);
+      const status = String(subscription.status ?? '');
+      const isSuccess = ['authenticated', 'active'].includes(status);
+      const trialEnd = this.asUnixTimestamp(subscription.start_at ?? subscription.charge_at);
+      const currentPeriodStart = this.asUnixTimestamp(
+        subscription.current_start ?? subscription.start_at,
+      );
+      const currentPeriodEnd = this.asUnixTimestamp(
+        subscription.current_end ?? subscription.charge_at,
+      );
+
+      return {
+        isSuccess,
+        failureReason: isSuccess ? undefined : `Subscription status: ${status}`,
+        metadata: {
+          providerSubscriptionId: subscription.id,
+          subscriptionId: subscription.id,
+          subscriptionStatus: this.mapSubscriptionStatus(status),
+          trialStart: trialEnd && trialEnd > Math.floor(Date.now() / 1000) ? Math.floor(Date.now() / 1000) : undefined,
+          trialEnd,
+          currentPeriodStart,
+          currentPeriodEnd,
+        },
+      };
+    }
 
     // Razorpay's recommended server-side verification:
     // SHA-256 HMAC of "orderId|paymentId" with key_secret
@@ -134,5 +235,40 @@ export class RazorpayProvider implements IPaymentProvider {
 
     if (expectedBuf.length !== receivedBuf.length) return false;
     return timingSafeEqual(expectedBuf, receivedBuf);
+  }
+
+  private mapPlanPeriod(interval: string): string {
+    if (interval === 'day') return 'daily';
+    if (interval === 'week') return 'weekly';
+    if (interval === 'year') return 'yearly';
+    return 'monthly';
+  }
+
+  private resolveIntervalCount(rawValue: unknown): number {
+    const value = Number(rawValue);
+    return Number.isFinite(value) && value > 0 ? value : 1;
+  }
+
+  private resolveTrialDays(rawValue: unknown): number {
+    const value = Number(rawValue);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  }
+
+  private resolveTotalCount(): number {
+    return 120;
+  }
+
+  private mapSubscriptionStatus(status?: string): string | undefined {
+    if (!status) return undefined;
+    if (status === 'authenticated') return 'TRIALING';
+    if (status === 'active') return 'ACTIVE';
+    if (status === 'pending' || status === 'halted') return 'PAST_DUE';
+    if (status === 'cancelled' || status === 'completed') return 'CANCELLED';
+    return undefined;
+  }
+
+  private asUnixTimestamp(value: unknown): number | undefined {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
   }
 }
