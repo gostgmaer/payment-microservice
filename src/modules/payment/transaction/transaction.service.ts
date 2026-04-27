@@ -123,7 +123,7 @@ export class TransactionService {
     customerId: string,
     page = 1,
     limit = 20,
-  ): Promise<{ data: Transaction[]; total: number }> {
+  ): Promise<{ data: Array<Record<string, unknown>>; total: number }> {
     const skip = (page - 1) * limit;
     const where = { tenantId, customerId };
     const [data, total] = await this.prisma.$transaction([
@@ -136,6 +136,16 @@ export class TransactionService {
       }),
       this.prisma.transaction.count({ where }),
     ]);
-    return { data, total };
+    return {
+      data: data.map((transaction) => ({
+        ...transaction,
+        amount: transaction.amount.toString(),
+        attempts: transaction.attempts.map((attempt) => ({
+          ...attempt,
+          amount: attempt.amount.toString(),
+        })),
+      })),
+      total,
+    };
   }
 }

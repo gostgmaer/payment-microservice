@@ -24,6 +24,7 @@ import {
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { ServiceOrJwtGuard } from '../../common/guards/service-or-jwt.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CurrentTenant } from '../../common/decorators/current-tenant.decorator';
 import { JwtPayload } from '../security/strategies/jwt.strategy';
@@ -68,7 +69,7 @@ export class CreateInvoiceDto {
 
 @ApiTags('Billing')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(ServiceOrJwtGuard)
 @Controller('billing')
 export class BillingController {
   constructor(private readonly billingService: BillingService) {}

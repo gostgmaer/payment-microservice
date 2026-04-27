@@ -200,7 +200,23 @@ export class BillingService {
       }),
       this.prisma.invoice.count({ where }),
     ]);
-    return { data, total };
+    return {
+      data: data.map((invoice) => ({
+        ...invoice,
+        subtotal: invoice.subtotal.toString(),
+        taxAmount: invoice.taxAmount.toString(),
+        totalAmount: invoice.totalAmount.toString(),
+        items: invoice.items.map((item) => ({
+          ...item,
+          unitAmount: item.unitAmount.toString(),
+          amount: item.amount.toString(),
+          cgstAmount: item.cgstAmount?.toString() ?? null,
+          sgstAmount: item.sgstAmount?.toString() ?? null,
+          igstAmount: item.igstAmount?.toString() ?? null,
+        })),
+      })),
+      total,
+    };
   }
 
   // ── Private helpers ─────────────────────────────────────────────────────

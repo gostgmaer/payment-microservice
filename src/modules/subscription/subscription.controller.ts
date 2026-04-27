@@ -3,6 +3,7 @@ import {
   Post,
   Get,
   Delete,
+  Patch,
   Body,
   Param,
   Query,
@@ -18,6 +19,7 @@ import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { ApiKeyGuard } from '../../common/guards/api-key.guard';
+import { ServiceOrJwtGuard } from '../../common/guards/service-or-jwt.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CurrentTenant } from '../../common/decorators/current-tenant.decorator';
 import { JwtPayload } from '../security/strategies/jwt.strategy';
@@ -59,6 +61,12 @@ export class CancelSubscriptionDto {
   @ApiPropertyOptional({ description: 'Cancel immediately or at period end' })
   @IsOptional()
   immediate?: boolean;
+}
+
+export class UpdateSubscriptionPlanDto {
+  @ApiProperty({ description: 'Target plan ID for this subscription' })
+  @IsString()
+  planId: string;
 }
 
 @ApiTags('Subscriptions')
@@ -144,7 +152,7 @@ export class SubscriptionController {
   }
 
   @Get()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(ServiceOrJwtGuard)
   @ApiBearerAuth()
   @RequirePermission(Permission.SUBSCRIPTION_READ)
   @ApiOperation({ summary: 'List subscriptions for current customer' })
@@ -158,7 +166,7 @@ export class SubscriptionController {
   }
 
   @Get(':id')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(ServiceOrJwtGuard)
   @ApiBearerAuth()
   @RequirePermission(Permission.SUBSCRIPTION_READ)
   @ApiOperation({ summary: 'Get subscription details' })
@@ -166,8 +174,28 @@ export class SubscriptionController {
     return this.subscriptionService.findById(id, tenantId);
   }
 
+  @Patch(':id/plan')
+  @UseGuards(ServiceOrJwtGuard)
+  @ApiBearerAuth()
+  @RequirePermission(Permission.SUBSCRIPTION_WRITE)
+  @ApiOperation({ summary: 'Change the plan for a managed subscription' })
+  async updateSubscriptionPlan(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateSubscriptionPlanDto,
+    @CurrentUser() user: JwtPayload,
+    @CurrentTenant() tenantId: string,
+  ) {
+    return this.subscriptionService.updateSubscriptionPlan({
+      subscriptionId: id,
+      tenantId,
+      customerId: user.sub,
+      planId: dto.planId,
+      actorId: user.sub,
+    });
+  }
+
   @Delete(':id')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(ServiceOrJwtGuard)
   @ApiBearerAuth()
   @RequirePermission(Permission.SUBSCRIPTION_CANCEL)
   @ApiOperation({ summary: 'Cancel a subscription' })
@@ -175,9 +203,12 @@ export class SubscriptionController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CancelSubscriptionDto,
     @CurrentUser() user: JwtPayload,
+    @CurrentTenant() tenantId: string,
   ) {
     return this.subscriptionService.cancelSubscription({
       subscriptionId: id,
+      tenantId,
+      customerId: user.sub,
       reason: dto.reason,
       immediate: dto.immediate,
       actorId: user.sub,

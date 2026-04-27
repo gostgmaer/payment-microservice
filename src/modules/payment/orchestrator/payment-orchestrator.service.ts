@@ -339,7 +339,6 @@ export class PaymentOrchestratorService {
     actorId: string;
   }): Promise<void> {
     if (input.transactionMetadata.billingMode !== 'subscription') return;
-    if (input.attemptProvider === Provider.CASH) return;
 
     const planId =
       typeof input.transactionMetadata.planId === 'string'
@@ -348,6 +347,28 @@ export class PaymentOrchestratorService {
     if (!planId) {
       this.logger.warn(
         'Recurring payment verified without planId metadata; skipping subscription sync',
+      );
+      return;
+    }
+
+    if (input.attemptProvider === Provider.CASH) {
+      await this.subscriptionService.createSubscription(
+        {
+          tenantId: input.tenantId,
+          customerId: input.transactionCustomerId,
+          planId,
+          trialOverrideDays: this.resolveTrialOverrideDays(input.transactionMetadata.trialDays),
+          metadata: this.mergeMetadata(
+            input.transactionMetadata,
+            this.mergeMetadata(input.mergedAttemptMetadata, {
+              billingMode: 'subscription',
+              provider: input.attemptProvider,
+              providerOrderId: input.attemptProviderOrderId,
+            }),
+          ),
+          actorId: input.actorId,
+        },
+        input.tx,
       );
       return;
     }
@@ -428,6 +449,11 @@ export class PaymentOrchestratorService {
       if (normalized === 'EXPIRED') return 'EXPIRED' as SubscriptionStatus;
     }
     return trialEnd && trialEnd > new Date() ? 'TRIALING' : 'ACTIVE';
+  }
+
+  private resolveTrialOverrideDays(rawTrialDays: unknown): number | undefined {
+    const parsed = Number(rawTrialDays);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
   }
 
   private resolveDate(...values: unknown[]): Date | null {

@@ -58,9 +58,19 @@ export interface SyncExternalSubscriptionDto {
 
 export interface CancelSubscriptionDto {
   subscriptionId: string;
+  tenantId?: string;
+  customerId?: string;
   reason?: string;
   actorId: string;
   immediate?: boolean;
+}
+
+export interface UpdateSubscriptionPlanDto {
+  subscriptionId: string;
+  tenantId?: string;
+  customerId?: string;
+  planId: string;
+  actorId: string;
 }
 
 type SubscriptionWithPlan = Subscription & { plan: Plan };
@@ -77,8 +87,12 @@ export class SubscriptionService {
     private readonly iamSettings: IamSettingsService,
   ) {}
 
-  async createSubscription(dto: CreateSubscriptionDto): Promise<SubscriptionWithPlan> {
-    const plan = await this.getActivePlanOrThrow(dto.planId);
+  async createSubscription(
+    dto: CreateSubscriptionDto,
+    tx?: Prisma.TransactionClient,
+  ): Promise<SubscriptionWithPlan> {
+    const client = tx ?? this.prisma;
+    const plan = await this.getActivePlanOrThrow(dto.planId, client);
 
     const trialDays = dto.trialOverrideDays ?? plan.trialDays;
     const now = new Date();
@@ -86,7 +100,7 @@ export class SubscriptionService {
     const periodStart = trialEnd ?? now;
     const periodEnd = this.calculateNextPeriodEnd(periodStart, plan.interval, plan.intervalCount);
 
-    const subscription = await this.prisma.subscription.create({
+    const subscription = await client.subscription.create({
       data: {
         tenantId: dto.tenantId,
         customerId: dto.customerId,
@@ -101,14 +115,16 @@ export class SubscriptionService {
       include: { plan: true },
     });
 
-    await this.auditService.log({
-      tenantId: dto.tenantId,
-      actor: dto.actorId,
-      action: 'SUBSCRIPTION_CREATED',
-      resourceType: 'Subscription',
-      resourceId: subscription.id,
-      newState: { planId: dto.planId, status: subscription.status },
-    });
+    if (!tx) {
+      await this.auditService.log({
+        tenantId: dto.tenantId,
+        actor: dto.actorId,
+        action: 'SUBSCRIPTION_CREATED',
+        resourceType: 'Subscription',
+        resourceId: subscription.id,
+        newState: { planId: dto.planId, status: subscription.status },
+      });
+    }
 
     this.logger.log(`Subscription ${subscription.id} created for customer ${dto.customerId}`);
     return subscription;
@@ -249,7 +265,20 @@ export class SubscriptionService {
   }
 
   async cancelSubscription(dto: CancelSubscriptionDto): Promise<Subscription> {
-    const subscription = await this.findById(dto.subscriptionId);
+    const subscription = await this.prisma.subscription.findFirst({
+      where: {
+        id: dto.subscriptionId,
+        ...(dto.tenantId ? { tenantId: dto.tenantId } : {}),
+        ...(dto.customerId ? { customerId: dto.customerId } : {}),
+      },
+    });
+
+    if (!subscription) {
+      throw new NotFoundException({
+        message: 'Subscription not found',
+        errorCode: ERROR_CODES.SUBSCRIPTION_NOT_FOUND,
+      });
+    }
 
     if (subscription.status === SubscriptionStatus.CANCELLED) {
       throw new BadRequestException({
@@ -280,6 +309,102 @@ export class SubscriptionService {
     });
 
     return updated;
+  }
+
+  async updateSubscriptionPlan(dto: UpdateSubscriptionPlanDto) {
+    const subscription = await this.prisma.subscription.findFirst({
+      where: {
+        id: dto.subscriptionId,
+        ...(dto.tenantId ? { tenantId: dto.tenantId } : {}),
+        ...(dto.customerId ? { customerId: dto.customerId } : {}),
+      },
+      include: { plan: true },
+    });
+
+    if (!subscription) {
+      throw new NotFoundException({
+        message: 'Subscription not found',
+        errorCode: ERROR_CODES.SUBSCRIPTION_NOT_FOUND,
+      });
+    }
+
+    if (
+      subscription.status === SubscriptionStatus.CANCELLED ||
+      subscription.status === SubscriptionStatus.EXPIRED
+    ) {
+      throw new BadRequestException({
+        message: 'Only active, trial, or past-due subscriptions can change plans',
+        errorCode: ERROR_CODES.SUBSCRIPTION_NOT_RENEWABLE,
+      });
+    }
+
+    if (subscription.planId === dto.planId) {
+      throw new BadRequestException({
+        message: 'Subscription is already on that plan',
+        errorCode: ERROR_CODES.PLAN_INACTIVE,
+      });
+    }
+
+    const metadata =
+      subscription?.metadata &&
+      !Array.isArray(subscription.metadata) &&
+      typeof subscription.metadata === 'object'
+        ? (subscription.metadata as Record<string, unknown>)
+        : {};
+    const providerSubscriptionId =
+      typeof metadata.providerSubscriptionId === 'string'
+        ? metadata.providerSubscriptionId.trim()
+        : '';
+
+    if (providerSubscriptionId) {
+      throw new BadRequestException({
+        message:
+          'This subscription is managed by an external billing provider and cannot be changed in place here',
+        errorCode: ERROR_CODES.SUBSCRIPTION_NOT_RENEWABLE,
+      });
+    }
+
+    const nextPlan = await this.getActivePlanOrThrow(dto.planId);
+    const updated = await this.prisma.subscription.update({
+      where: { id: dto.subscriptionId },
+      data: {
+        planId: dto.planId,
+        metadata: this.mergeMetadata(metadata, {
+          lastPlanChange: {
+            fromPlanId: subscription.planId,
+            toPlanId: dto.planId,
+            changedAt: new Date().toISOString(),
+          },
+        }) as Prisma.JsonObject,
+      },
+      include: { plan: true },
+    });
+
+    await this.auditService.log({
+      tenantId: subscription.tenantId,
+      actor: dto.actorId,
+      action: 'SUBSCRIPTION_PLAN_CHANGED',
+      resourceType: 'Subscription',
+      resourceId: dto.subscriptionId,
+      oldState: {
+        planId: subscription.planId,
+        planName: subscription.plan.name,
+      },
+      newState: {
+        planId: dto.planId,
+        planName: nextPlan.name,
+      },
+    });
+
+    return {
+      ...updated,
+      plan: updated.plan
+        ? {
+            ...updated.plan,
+            amount: updated.plan.amount.toString(),
+          }
+        : updated.plan,
+    };
   }
 
   /**
@@ -462,7 +587,18 @@ export class SubscriptionService {
       }),
       this.prisma.subscription.count({ where }),
     ]);
-    return { data, total };
+    return {
+      data: data.map((subscription) => ({
+        ...subscription,
+        plan: subscription.plan
+          ? {
+              ...subscription.plan,
+              amount: subscription.plan.amount.toString(),
+            }
+          : subscription.plan,
+      })),
+      total,
+    };
   }
 
   // ── Private helpers ─────────────────────────────────────────────────────
@@ -481,7 +617,10 @@ export class SubscriptionService {
     }
   }
 
-  private async getActivePlanOrThrow(id: string, client: Prisma.TransactionClient | PrismaService = this.prisma) {
+  private async getActivePlanOrThrow(
+    id: string,
+    client: Prisma.TransactionClient | PrismaService = this.prisma,
+  ) {
     const plan = await client.plan.findUnique({ where: { id } });
     if (!plan)
       throw new NotFoundException({
