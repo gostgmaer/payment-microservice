@@ -62,14 +62,18 @@ export class StripeProvider implements IPaymentProvider {
     // ── Standard Payment Intent flow (embedded Stripe.js / Elements) ──────
     this.logger.log(`Creating Stripe PaymentIntent for transaction ${input.transactionId}`);
 
+    const providerCustomerId = this.resolveProviderCustomerId(input.metadata);
+
     // Amount must be integer (Stripe always expects smallest currency unit)
     const paymentIntent = await this.stripe.paymentIntents.create(
       {
         amount: Number(input.amount), // safe: all payments fit within Number.MAX_SAFE_INTEGER
         currency: input.currency.toLowerCase(),
+        ...(providerCustomerId ? { customer: providerCustomerId } : {}),
         metadata: {
           transactionId: input.transactionId,
           customerId: input.customerId,
+          ...(providerCustomerId ? { providerCustomerId } : {}),
           ...input.metadata,
         },
         automatic_payment_methods: { enabled: true },
@@ -101,6 +105,7 @@ export class StripeProvider implements IPaymentProvider {
     const cancelUrl = String(input.metadata?.cancelUrl ?? '');
     const customerEmail = String(input.metadata?.customerEmail ?? '');
     const productName = String(input.metadata?.productName ?? 'Product');
+    const providerCustomerId = this.resolveProviderCustomerId(input.metadata);
 
     if (!successUrl || !cancelUrl) {
       throw new Error('Stripe Checkout Session requires successUrl and cancelUrl in metadata');
@@ -122,11 +127,16 @@ export class StripeProvider implements IPaymentProvider {
         ],
         success_url: successUrl,
         cancel_url: cancelUrl,
-        ...(customerEmail ? { customer_email: customerEmail } : {}),
+        ...(providerCustomerId
+          ? { customer: providerCustomerId }
+          : customerEmail
+            ? { customer_email: customerEmail }
+            : {}),
         metadata: {
           transactionId: input.transactionId,
           customerId: input.customerId,
           idempotencyKey: input.idempotencyKey,
+          ...(providerCustomerId ? { providerCustomerId } : {}),
         },
       },
       { idempotencyKey: input.idempotencyKey },
@@ -155,6 +165,7 @@ export class StripeProvider implements IPaymentProvider {
     const trialDays = this.resolveTrialDays(input.metadata?.trialDays);
     const planId = String(input.metadata?.planId ?? '');
     const productId = String(input.metadata?.productId ?? '');
+    const providerCustomerId = this.resolveProviderCustomerId(input.metadata);
 
     if (!successUrl || !cancelUrl) {
       throw new Error('Stripe subscription Checkout requires successUrl and cancelUrl in metadata');
@@ -180,7 +191,11 @@ export class StripeProvider implements IPaymentProvider {
         ],
         success_url: successUrl,
         cancel_url: cancelUrl,
-        ...(customerEmail ? { customer_email: customerEmail } : {}),
+        ...(providerCustomerId
+          ? { customer: providerCustomerId }
+          : customerEmail
+            ? { customer_email: customerEmail }
+            : {}),
         metadata: {
           transactionId: input.transactionId,
           customerId: input.customerId,
@@ -189,6 +204,7 @@ export class StripeProvider implements IPaymentProvider {
           customerEmail,
           recurringMode: 'true',
           idempotencyKey: input.idempotencyKey,
+          ...(providerCustomerId ? { providerCustomerId } : {}),
         },
         subscription_data: {
           ...(trialDays > 0 ? { trial_period_days: trialDays } : {}),
@@ -199,6 +215,7 @@ export class StripeProvider implements IPaymentProvider {
             productId,
             customerEmail,
             recurringMode: 'true',
+            ...(providerCustomerId ? { providerCustomerId } : {}),
           },
         },
       },
@@ -230,7 +247,9 @@ export class StripeProvider implements IPaymentProvider {
           ['paid', 'no_payment_required'].includes(session.payment_status)
         ) {
           const subscriptionId =
-            typeof session.subscription === 'string' ? session.subscription : session.subscription?.id;
+            typeof session.subscription === 'string'
+              ? session.subscription
+              : session.subscription?.id;
           const subscription = subscriptionId
             ? await this.stripe.subscriptions.retrieve(subscriptionId)
             : null;
@@ -247,6 +266,8 @@ export class StripeProvider implements IPaymentProvider {
               currentPeriodEnd: subscription?.current_period_end,
               trialStart: subscription?.trial_start,
               trialEnd: subscription?.trial_end,
+              providerCustomerId:
+                typeof session.customer === 'string' ? session.customer : undefined,
               customerId: typeof session.customer === 'string' ? session.customer : undefined,
             },
           };
@@ -257,6 +278,8 @@ export class StripeProvider implements IPaymentProvider {
             metadata: {
               sessionId: session.id,
               paymentIntentId: String(session.payment_intent ?? ''),
+              providerCustomerId:
+                typeof session.customer === 'string' ? session.customer : undefined,
             },
           };
         }
@@ -275,7 +298,14 @@ export class StripeProvider implements IPaymentProvider {
     const paymentIntent = await this.stripe.paymentIntents.retrieve(input.providerOrderId);
 
     if (paymentIntent.status === 'succeeded') {
-      return { isSuccess: true, metadata: { chargeId: paymentIntent.latest_charge as string } };
+      return {
+        isSuccess: true,
+        metadata: {
+          chargeId: paymentIntent.latest_charge as string,
+          providerCustomerId:
+            typeof paymentIntent.customer === 'string' ? paymentIntent.customer : undefined,
+        },
+      };
     }
 
     return {
@@ -354,6 +384,158 @@ export class StripeProvider implements IPaymentProvider {
     return this.stripe.webhooks.constructEvent(rawBody, signature, this.config.stripeWebhookSecret);
   }
 
+  async ensureCustomer(input: {
+    providerCustomerId?: string | null;
+    customerEmail?: string | null;
+    internalCustomerId: string;
+    tenantId: string;
+  }): Promise<string> {
+    const stripe = this.getClient();
+    if (input.providerCustomerId) {
+      return input.providerCustomerId;
+    }
+
+    const customer = await stripe.customers.create({
+      ...(input.customerEmail ? { email: input.customerEmail } : {}),
+      metadata: {
+        internalCustomerId: input.internalCustomerId,
+        tenantId: input.tenantId,
+      },
+    });
+
+    return customer.id;
+  }
+
+  async createSetupIntent(input: {
+    providerCustomerId?: string | null;
+    customerEmail?: string | null;
+    internalCustomerId: string;
+    tenantId: string;
+    idempotencyKey: string;
+  }): Promise<{ setupIntentId: string; clientSecret: string; providerCustomerId: string }> {
+    const stripe = this.getClient();
+    const providerCustomerId = await this.ensureCustomer(input);
+
+    const setupIntent = await stripe.setupIntents.create(
+      {
+        customer: providerCustomerId,
+        payment_method_types: ['card'],
+        usage: 'off_session',
+        metadata: {
+          internalCustomerId: input.internalCustomerId,
+          tenantId: input.tenantId,
+        },
+      },
+      { idempotencyKey: input.idempotencyKey },
+    );
+
+    if (!setupIntent.client_secret) {
+      throw new Error('Stripe SetupIntent did not return a client secret');
+    }
+
+    return {
+      setupIntentId: setupIntent.id,
+      clientSecret: setupIntent.client_secret,
+      providerCustomerId,
+    };
+  }
+
+  async retrieveCompletedSetupIntent(setupIntentId: string): Promise<{
+    providerCustomerId: string;
+    paymentMethod: StripeSavedPaymentMethod;
+  }> {
+    const stripe = this.getClient();
+    const setupIntent = await stripe.setupIntents.retrieve(setupIntentId);
+
+    if (setupIntent.status !== 'succeeded') {
+      throw new Error(`SetupIntent ${setupIntentId} is not complete`);
+    }
+
+    const providerCustomerId =
+      typeof setupIntent.customer === 'string' ? setupIntent.customer : setupIntent.customer?.id;
+    const paymentMethodId =
+      typeof setupIntent.payment_method === 'string'
+        ? setupIntent.payment_method
+        : setupIntent.payment_method?.id;
+
+    if (!providerCustomerId || !paymentMethodId) {
+      throw new Error(`SetupIntent ${setupIntentId} is missing customer or payment method data`);
+    }
+
+    const paymentMethod = await stripe.paymentMethods.retrieve(paymentMethodId);
+    return {
+      providerCustomerId,
+      paymentMethod: this.toSavedPaymentMethod(paymentMethod),
+    };
+  }
+
+  async listSavedPaymentMethods(providerCustomerId: string): Promise<{
+    defaultPaymentMethodId: string | null;
+    methods: StripeSavedPaymentMethod[];
+  }> {
+    const stripe = this.getClient();
+    const customer = await stripe.customers.retrieve(providerCustomerId);
+    if ('deleted' in customer && customer.deleted) {
+      throw new Error(`Stripe customer ${providerCustomerId} was deleted`);
+    }
+
+    const defaultPaymentMethodId =
+      typeof customer.invoice_settings.default_payment_method === 'string'
+        ? customer.invoice_settings.default_payment_method
+        : (customer.invoice_settings.default_payment_method?.id ?? null);
+
+    const paymentMethods = await stripe.paymentMethods.list({
+      customer: providerCustomerId,
+      type: 'card',
+      limit: 100,
+    });
+
+    return {
+      defaultPaymentMethodId,
+      methods: paymentMethods.data.map((paymentMethod) =>
+        this.toSavedPaymentMethod(paymentMethod, defaultPaymentMethodId),
+      ),
+    };
+  }
+
+  async setDefaultPaymentMethod(input: {
+    providerCustomerId: string;
+    paymentMethodId: string;
+  }): Promise<StripeSavedPaymentMethod> {
+    const stripe = this.getClient();
+    const paymentMethod = await stripe.paymentMethods.retrieve(input.paymentMethodId);
+    const currentCustomerId =
+      typeof paymentMethod.customer === 'string'
+        ? paymentMethod.customer
+        : paymentMethod.customer?.id;
+
+    if (currentCustomerId !== input.providerCustomerId) {
+      throw new Error('Payment method does not belong to the Stripe customer');
+    }
+
+    await stripe.customers.update(input.providerCustomerId, {
+      invoice_settings: { default_payment_method: input.paymentMethodId },
+    });
+
+    const subscriptions = await stripe.subscriptions.list({
+      customer: input.providerCustomerId,
+      status: 'all',
+      limit: 100,
+    });
+
+    const activeSubscriptions = subscriptions.data.filter((subscription) =>
+      ['active', 'trialing', 'past_due', 'unpaid', 'incomplete'].includes(subscription.status),
+    );
+
+    for (const subscription of activeSubscriptions) {
+      await stripe.subscriptions.update(subscription.id, {
+        default_payment_method: input.paymentMethodId,
+      });
+    }
+
+    return this.toSavedPaymentMethod(paymentMethod, input.paymentMethodId);
+  }
+
   private mapRefundReason(reason?: string): Stripe.RefundCreateParams.Reason | undefined {
     if (!reason) return undefined;
     const map: Record<string, Stripe.RefundCreateParams.Reason> = {
@@ -363,4 +545,57 @@ export class StripeProvider implements IPaymentProvider {
     };
     return map[reason.toLowerCase()];
   }
+
+  private getClient(): Stripe {
+    if (!this.stripe) {
+      throw new Error('Stripe provider is not enabled');
+    }
+
+    return this.stripe;
+  }
+
+  private resolveProviderCustomerId(metadata?: Record<string, unknown>): string | undefined {
+    const direct = metadata?.providerCustomerId;
+    if (typeof direct === 'string' && direct.trim()) {
+      return direct.trim();
+    }
+
+    const legacy = metadata?.customerId;
+    if (typeof legacy === 'string' && legacy.startsWith('cus_')) {
+      return legacy;
+    }
+
+    return undefined;
+  }
+
+  private toSavedPaymentMethod(
+    paymentMethod: Stripe.PaymentMethod,
+    defaultPaymentMethodId?: string | null,
+  ): StripeSavedPaymentMethod {
+    return {
+      id: paymentMethod.id,
+      type: paymentMethod.type,
+      brand: paymentMethod.card?.brand ?? null,
+      last4: paymentMethod.card?.last4 ?? null,
+      expMonth: paymentMethod.card?.exp_month ?? null,
+      expYear: paymentMethod.card?.exp_year ?? null,
+      funding: paymentMethod.card?.funding ?? null,
+      createdAt: paymentMethod.created
+        ? new Date(paymentMethod.created * 1000).toISOString()
+        : null,
+      isDefault: Boolean(defaultPaymentMethodId && paymentMethod.id === defaultPaymentMethodId),
+    };
+  }
+}
+
+export interface StripeSavedPaymentMethod {
+  id: string;
+  type: string;
+  brand: string | null;
+  last4: string | null;
+  expMonth: number | null;
+  expYear: number | null;
+  funding: string | null;
+  createdAt: string | null;
+  isDefault: boolean;
 }

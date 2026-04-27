@@ -355,6 +355,26 @@ model SubscriptionCycle {
   @@index([status])
 }
 
+/// Persisted mapping between an internal customer and the provider-side billing profile.
+/// The provider remains the source of truth for saved instruments; this model stores
+/// the provider customer reference needed to retrieve and update them reliably.
+model CustomerBillingProfile {
+  id                     String   @id @default(uuid())
+  tenantId               String
+  customerId             String
+  provider               Provider
+  providerCustomerId     String
+  defaultPaymentMethodId String?
+  metadata               Json?    @db.JsonB
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@unique([tenantId, customerId, provider])
+  @@unique([provider, providerCustomerId])
+  @@index([tenantId])
+  @@index([tenantId, customerId])
+}
+
 // ─── Audit Models ─────────────────────────────────────────────────────────────
 
 /// Immutable financial audit log — append-only, never updated or deleted.

@@ -147,6 +147,7 @@ export class PaymentOrchestratorService {
     for (const providerName of enabledProviders) {
       try {
         const provider = this.providerFactory.get(providerName);
+        const providerMetadata = await this.resolveProviderMetadata(providerName, dto);
         const providerResult = await provider.createPayment({
           amount: dto.amount,
           currency: dto.currency,
@@ -154,7 +155,7 @@ export class PaymentOrchestratorService {
           customerId: dto.customerId,
           method: dto.preferredMethod,
           idempotencyKey: `${dto.idempotencyKey}:${providerName}`,
-          metadata: dto.metadata,
+          metadata: providerMetadata,
         });
 
         const attempt = await this.attemptService.create({
@@ -424,6 +425,36 @@ export class PaymentOrchestratorService {
       },
       input.tx,
     );
+  }
+
+  private async resolveProviderMetadata(
+    providerName: Provider,
+    dto: InitiatePaymentDto,
+  ): Promise<Record<string, unknown> | undefined> {
+    const metadata = dto.metadata ? { ...dto.metadata } : undefined;
+
+    if (providerName !== Provider.STRIPE) {
+      return metadata;
+    }
+
+    const billingProfile = await this.prisma.customerBillingProfile.findUnique({
+      where: {
+        tenantId_customerId_provider: {
+          tenantId: dto.tenantId,
+          customerId: dto.customerId,
+          provider: Provider.STRIPE,
+        },
+      },
+    });
+
+    if (!billingProfile?.providerCustomerId) {
+      return metadata;
+    }
+
+    return {
+      ...(metadata ?? {}),
+      providerCustomerId: billingProfile.providerCustomerId,
+    };
   }
 
   private resolveProviderSubscriptionId(

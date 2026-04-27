@@ -26,6 +26,7 @@ import { PaymentOrchestratorModule } from './modules/payment/orchestrator/paymen
 import { TransactionModule } from './modules/payment/transaction/transaction.module';
 import { PaymentAttemptModule } from './modules/payment/attempt/payment-attempt.module';
 import { PaymentProviderModule } from './modules/payment/provider/payment-provider.module';
+import { PaymentMethodModule } from './modules/payment/method/payment-method.module';
 import { WebhookModule } from './modules/payment/webhook/webhook.module';
 import { RefundModule } from './modules/payment/refund/refund.module';
 import { LedgerModule } from './modules/ledger/ledger.module';
@@ -115,6 +116,7 @@ const conditionalModules = bullmqEnabled ? [EventsModule] : [];
     PaymentProviderModule,
     TransactionModule,
     PaymentAttemptModule,
+    PaymentMethodModule,
     LedgerModule,
     WebhookModule,
     RefundModule,
