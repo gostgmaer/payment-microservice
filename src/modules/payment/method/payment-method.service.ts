@@ -1,5 +1,11 @@
 import { randomUUID } from 'crypto';
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   AttemptStatus,
   CustomerBillingProfile,
@@ -83,6 +89,14 @@ export class PaymentMethodService {
 
   async createSetupIntent(dto: CreateSetupIntentDto) {
     const provider = this.resolveProvider(dto.provider);
+    const publishableKey = this.config.stripePublishableKey;
+    if (!publishableKey) {
+      throw new BadRequestException({
+        message: 'Stripe publishable key is not configured for payment method setup.',
+        errorCode: ERROR_CODES.PAYMENT_PROVIDER_UNAVAILABLE,
+      });
+    }
+
     const profile = await this.resolveStripeProfile({
       tenantId: dto.tenantId,
       customerId: dto.customerId,
@@ -129,6 +143,7 @@ export class PaymentMethodService {
         setupIntentId: setupIntent.setupIntentId,
         clientSecret: setupIntent.clientSecret,
         providerCustomerId: savedProfile.providerCustomerId,
+        publishableKey,
       },
     };
   }
@@ -141,6 +156,29 @@ export class PaymentMethodService {
       tenantId: dto.tenantId,
       customerId: dto.customerId,
     });
+
+    const belongsToCustomer =
+      completed.metadata.internalCustomerId === dto.customerId && completed.metadata.tenantId === dto.tenantId;
+    const matchesExistingProfile =
+      !existingProfile || existingProfile.providerCustomerId === completed.providerCustomerId;
+
+    if (!belongsToCustomer || !matchesExistingProfile) {
+      this.logger.warn(
+        `Rejected SetupIntent completion for customer ${dto.customerId} in tenant ${dto.tenantId}`,
+        {
+          setupIntentId: dto.setupIntentId,
+          metadataCustomerId: completed.metadata.internalCustomerId,
+          metadataTenantId: completed.metadata.tenantId,
+          providerCustomerId: completed.providerCustomerId,
+          existingProviderCustomerId: existingProfile?.providerCustomerId,
+        },
+      );
+
+      throw new ForbiddenException({
+        message: 'The completed payment setup does not belong to this customer.',
+        errorCode: ERROR_CODES.FORBIDDEN,
+      });
+    }
 
     const shouldSetDefault = dto.setAsDefault ?? !existingProfile?.defaultPaymentMethodId;
 

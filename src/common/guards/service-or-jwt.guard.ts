@@ -73,6 +73,7 @@ export class ServiceOrJwtGuard implements CanActivate {
         request.user = {
           sub: request.headers['x-user-id'] ?? 'service-account',
           tenantId: request.headers['x-tenant-id'] ?? '',
+          email: request.headers['x-user-email'] ?? undefined,
           roles: ['service'],
           permissions: ServiceOrJwtGuard.SERVICE_PERMISSIONS,
         };

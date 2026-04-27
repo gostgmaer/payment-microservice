@@ -443,6 +443,10 @@ export class StripeProvider implements IPaymentProvider {
   async retrieveCompletedSetupIntent(setupIntentId: string): Promise<{
     providerCustomerId: string;
     paymentMethod: StripeSavedPaymentMethod;
+    metadata: {
+      internalCustomerId: string | null;
+      tenantId: string | null;
+    };
   }> {
     const stripe = this.getClient();
     const setupIntent = await stripe.setupIntents.retrieve(setupIntentId);
@@ -466,6 +470,14 @@ export class StripeProvider implements IPaymentProvider {
     return {
       providerCustomerId,
       paymentMethod: this.toSavedPaymentMethod(paymentMethod),
+      metadata: {
+        internalCustomerId:
+          typeof setupIntent.metadata?.internalCustomerId === 'string'
+            ? setupIntent.metadata.internalCustomerId
+            : null,
+        tenantId:
+          typeof setupIntent.metadata?.tenantId === 'string' ? setupIntent.metadata.tenantId : null,
+      },
     };
   }
 

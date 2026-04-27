@@ -31,6 +31,7 @@ import { AppConfigService } from './app-config.service';
           then: Joi.string().min(1).required(),
           otherwise: Joi.string().allow('').optional(),
         }),
+        STRIPE_PUBLISHABLE_KEY: Joi.string().allow('').optional(),
         STRIPE_WEBHOOK_SECRET: Joi.when('STRIPE_ENABLED', {
           is: 'true',
           then: Joi.string().min(1).required(),

@@ -51,6 +51,9 @@ export class AppConfigService {
   get stripeSecretKey(): string {
     return this.config.getOrThrow<string>('stripe.secretKey');
   }
+  get stripePublishableKey(): string | null {
+    return this.config.get<string>('stripe.publishableKey') || null;
+  }
   get stripeWebhookSecret(): string {
     return this.config.getOrThrow<string>('stripe.webhookSecret');
   }
