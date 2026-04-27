@@ -78,7 +78,8 @@ const conditionalModules = bullmqEnabled ? [EventsModule] : [];
               remove: true,
             },
             transport:
-              structuredLoggingEnabled && config.get<string>('app.env', 'development') !== 'production'
+              structuredLoggingEnabled &&
+              config.get<string>('app.env', 'development') !== 'production'
                 ? { target: 'pino-pretty', options: { colorize: true, singleLine: false } }
                 : undefined,
             customProps: () => ({ service: 'payment-microservice' }),
