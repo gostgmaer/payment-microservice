@@ -369,9 +369,15 @@ export class StripeProvider implements IPaymentProvider {
   }
 
   verifyWebhookSignature(rawBody: Buffer, signature: string): boolean {
+    const webhookSecret = this.config.stripeWebhookSecret;
+    if (!webhookSecret) {
+      this.logger.warn('Stripe webhook secret is not configured; rejecting webhook.');
+      return false;
+    }
+
     try {
       // constructEvent throws if signature is invalid
-      this.stripe.webhooks.constructEvent(rawBody, signature, this.config.stripeWebhookSecret);
+      this.stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
       return true;
     } catch (err) {
       this.logger.warn(`Stripe webhook signature verification failed: ${(err as Error).message}`);
@@ -381,7 +387,12 @@ export class StripeProvider implements IPaymentProvider {
 
   /** Parse the raw Stripe webhook event from a raw body buffer. */
   parseWebhookEvent(rawBody: Buffer, signature: string): Stripe.Event {
-    return this.stripe.webhooks.constructEvent(rawBody, signature, this.config.stripeWebhookSecret);
+    const webhookSecret = this.config.stripeWebhookSecret;
+    if (!webhookSecret) {
+      throw new Error('Stripe webhook secret is not configured');
+    }
+
+    return this.stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
   }
 
   async ensureCustomer(input: {

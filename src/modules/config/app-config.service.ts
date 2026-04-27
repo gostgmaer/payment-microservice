@@ -55,7 +55,7 @@ export class AppConfigService {
     return this.config.get<string>('stripe.publishableKey') || null;
   }
   get stripeWebhookSecret(): string {
-    return this.config.getOrThrow<string>('stripe.webhookSecret');
+    return this.config.get<string>('stripe.webhookSecret') || '';
   }
   get stripeApiVersion(): string {
     return this.config.get('stripe.apiVersion', '2024-04-10');
@@ -72,7 +72,7 @@ export class AppConfigService {
     return this.config.getOrThrow<string>('razorpay.keySecret');
   }
   get razorpayWebhookSecret(): string {
-    return this.config.getOrThrow<string>('razorpay.webhookSecret');
+    return this.config.get<string>('razorpay.webhookSecret') || '';
   }
   get razorpayEnabled(): boolean {
     return this.config.get<boolean>('razorpay.enabled', false);

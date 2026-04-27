@@ -225,8 +225,14 @@ export class RazorpayProvider implements IPaymentProvider {
   }
 
   verifyWebhookSignature(rawBody: Buffer, signature: string): boolean {
+    const webhookSecret = this.config.razorpayWebhookSecret;
+    if (!webhookSecret) {
+      this.logger.warn('Razorpay webhook secret is not configured; rejecting webhook.');
+      return false;
+    }
+
     // Razorpay webhook signature: SHA-256 HMAC of raw body with webhook_secret
-    const expected = createHmac('sha256', this.config.razorpayWebhookSecret)
+    const expected = createHmac('sha256', webhookSecret)
       .update(rawBody)
       .digest('hex');
 

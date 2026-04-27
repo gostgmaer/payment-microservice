@@ -34,7 +34,7 @@ import { AppConfigService } from './app-config.service';
         STRIPE_PUBLISHABLE_KEY: Joi.string().allow('').optional(),
         STRIPE_WEBHOOK_SECRET: Joi.when('STRIPE_ENABLED', {
           is: 'true',
-          then: Joi.string().min(1).required(),
+          then: Joi.string().allow('').optional(),
           otherwise: Joi.string().allow('').optional(),
         }),
         RAZORPAY_ENABLED: Joi.string().valid('true', 'false').default('false'),
@@ -50,7 +50,7 @@ import { AppConfigService } from './app-config.service';
         }),
         RAZORPAY_WEBHOOK_SECRET: Joi.when('RAZORPAY_ENABLED', {
           is: 'true',
-          then: Joi.string().min(1).required(),
+          then: Joi.string().allow('').optional(),
           otherwise: Joi.string().allow('').optional(),
         }),
         CASH_ENABLED: Joi.string().valid('true', 'false').default('false'),
