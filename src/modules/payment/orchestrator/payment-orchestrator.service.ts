@@ -89,6 +89,42 @@ type BillingMetadata = {
 export class PaymentOrchestratorService {
   private readonly logger = new Logger(PaymentOrchestratorService.name);
 
+  private describeProviderError(err: unknown): string {
+    if (err instanceof Error && err.message) {
+      return err.message;
+    }
+
+    if (typeof err === 'string' && err.trim()) {
+      return err;
+    }
+
+    if (err && typeof err === 'object') {
+      const candidate = err as Record<string, unknown>;
+      const parts = [
+        typeof candidate.error === 'string' ? candidate.error : null,
+        typeof candidate.message === 'string' ? candidate.message : null,
+        typeof candidate.description === 'string' ? candidate.description : null,
+        typeof candidate.reason === 'string' ? candidate.reason : null,
+        typeof candidate.statusCode === 'number' ? `HTTP ${candidate.statusCode}` : null,
+      ].filter((value): value is string => Boolean(value));
+
+      if (parts.length > 0) {
+        return parts.join(' - ');
+      }
+
+      try {
+        const serialized = JSON.stringify(candidate);
+        if (serialized && serialized !== '{}') {
+          return serialized;
+        }
+      } catch {
+        // Ignore JSON serialization errors and fall through to default.
+      }
+    }
+
+    return 'Unknown provider error';
+  }
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly transactionService: TransactionService,
@@ -143,6 +179,7 @@ export class PaymentOrchestratorService {
     // ── Step 3: Create attempts for each enabled provider ──────────────────
     const enabledProviders = dto.providers ?? this.providerFactory.getEnabledProviders();
     const options: PaymentOption[] = [];
+    const providerFailures: Array<{ provider: Provider; reason: string }> = [];
 
     for (const providerName of enabledProviders) {
       try {
@@ -178,9 +215,9 @@ export class PaymentOrchestratorService {
           attemptId: attempt.id,
         });
       } catch (err) {
-        this.logger.warn(
-          `Failed to create attempt for provider ${providerName}: ${(err as Error).message}`,
-        );
+        const reason = this.describeProviderError(err);
+        providerFailures.push({ provider: providerName, reason });
+        this.logger.warn(`Failed to create attempt for provider ${providerName}: ${reason}`);
         // Continue with other providers (failover behaviour)
       }
     }
@@ -188,9 +225,16 @@ export class PaymentOrchestratorService {
     if (options.length === 0) {
       // All providers failed — mark transaction as failed
       await this.transactionService.updateStatus(transaction.id, TransactionStatus.FAILED);
+
+      const message =
+        providerFailures.length === 1
+          ? `Payment provider ${providerFailures[0].provider} failed: ${providerFailures[0].reason}`
+          : 'All payment providers are currently unavailable';
+
       throw new BadRequestException({
-        message: 'All payment providers are currently unavailable',
+        message,
         errorCode: ERROR_CODES.PAYMENT_PROVIDER_UNAVAILABLE,
+        providerFailures,
       });
     }
 
