@@ -64,11 +64,21 @@ export class IamPermissionRegistrar implements OnApplicationBootstrap {
       return;
     }
 
+    const apiKey = this.config.iamServiceApiKey;
+    if (!apiKey) {
+      this.logger.warn(
+        'IAM_SERVICE_API_KEY is not configured — skipping permission registration. ' +
+          'Create an IAM API key with permission:manage and set IAM_SERVICE_API_KEY to enable automatic registration.',
+      );
+      return;
+    }
+
     try {
       const url = `${baseUrl}/api/v1/iam/rbac/permissions/register`;
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      const apiKey = this.config.iamServiceApiKey;
-      if (apiKey) headers['x-api-key'] = apiKey;
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+      };
 
       const body = JSON.stringify({
         source: 'payment-microservice',
