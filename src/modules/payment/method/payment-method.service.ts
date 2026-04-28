@@ -58,7 +58,17 @@ export class PaymentMethodService {
   ) {}
 
   async listCustomerPaymentMethods(tenantId: string, customerId: string) {
-    this.assertStripeSupported();
+    if (!this.config.stripeEnabled) {
+      return {
+        success: true,
+        data: {
+          items: [],
+          defaultPaymentMethodId: null,
+          providers: [],
+          canAddPaymentMethod: false,
+        },
+      };
+    }
 
     const profile = await this.resolveStripeProfile({ tenantId, customerId });
     if (!profile) {
