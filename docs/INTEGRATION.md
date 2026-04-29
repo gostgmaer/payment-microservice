@@ -187,7 +187,7 @@ This service also talks to IAM for platform settings and permission self-registr
 Relevant env vars:
 
 ```env
-IAM_SERVICE_URL=http://localhost:3100
+IAM_SERVICE_URL=http://localhost:4002
 IAM_SERVICE_API_KEY=
 ```
 
