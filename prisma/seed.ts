@@ -56,13 +56,13 @@ async function main() {
       id: 'plan_easydev_business_inr_monthly',
       tenantId: 'easydev',
       applicationId: 'easydev-communication',
-      name: 'EasyDev Business Monthly (INR)',
-      description: 'Business recurring billing via INR providers',
+      name: 'EasyDev Pay as you go Monthly (INR)',
+      description: 'Pay as you go recurring billing via INR providers',
       amount: BigInt(1299900), // ₹12,999.00
       currency: 'INR',
       interval: 'MONTHLY' as const,
       intervalCount: 1,
-      trialDays: 3,
+      trialDays: 0,
       isActive: true,
     },
   ];
