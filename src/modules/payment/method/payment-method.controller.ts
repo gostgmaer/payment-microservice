@@ -52,10 +52,7 @@ export class PaymentMethodController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'List saved payment methods for the authenticated customer' })
   @ApiResponse({ status: 200, description: 'Saved payment methods returned successfully' })
-  async listPaymentMethods(
-    @CurrentTenant() tenantId: string,
-    @CurrentUser() user: JwtPayload,
-  ) {
+  async listPaymentMethods(@CurrentTenant() tenantId: string, @CurrentUser() user: JwtPayload) {
     return this.paymentMethodService.listCustomerPaymentMethods(tenantId, user.sub);
   }
 

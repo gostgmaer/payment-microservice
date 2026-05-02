@@ -32,7 +32,8 @@ import { SubscriptionModule } from './modules/subscription/subscription.module';
             level: config.get<string>('app.logLevel', 'info'),
             autoLogging: false,
             transport:
-              structuredLoggingEnabled && config.get<string>('app.env', 'development') !== 'production'
+              structuredLoggingEnabled &&
+              config.get<string>('app.env', 'development') !== 'production'
                 ? { target: 'pino-pretty', options: { colorize: true, singleLine: false } }
                 : undefined,
             customProps: () => ({ service: 'payment-worker' }),

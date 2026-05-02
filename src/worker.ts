@@ -23,7 +23,10 @@ async function bootstrapWorker() {
   });
 
   const configService = app.get(ConfigService);
-  const structuredLoggingEnabled = configService.get<boolean>('app.structuredLoggingEnabled', false);
+  const structuredLoggingEnabled = configService.get<boolean>(
+    'app.structuredLoggingEnabled',
+    false,
+  );
 
   if (structuredLoggingEnabled) {
     app.useLogger(app.get(PinoLogger));

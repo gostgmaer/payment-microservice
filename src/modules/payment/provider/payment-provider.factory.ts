@@ -30,7 +30,7 @@ export class PaymentProviderFactory {
     private readonly config: AppConfigService,
   ) {
     this.providerMap = new Map();
-    if (config.stripeEnabled)   this.providerMap.set(Provider.STRIPE, stripeProvider);
+    if (config.stripeEnabled) this.providerMap.set(Provider.STRIPE, stripeProvider);
     if (config.razorpayEnabled) this.providerMap.set(Provider.RAZORPAY, razorpayProvider);
 
     // Cash is enabled if explicitly configured OR if no other provider is active.
@@ -40,7 +40,7 @@ export class PaymentProviderFactory {
       if (!config.cashEnabled) {
         this.logger.warn(
           'No payment gateway configured — CASH provider auto-enabled as fallback. ' +
-          'Set CASH_ENABLED=true explicitly or configure Stripe/Razorpay.',
+            'Set CASH_ENABLED=true explicitly or configure Stripe/Razorpay.',
         );
       }
     }

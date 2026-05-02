@@ -61,7 +61,9 @@ export class CashProvider implements IPaymentProvider {
    * the transaction as paid through the back-office workflow.
    */
   async verifyPayment(input: VerifyPaymentInput): Promise<VerifyPaymentResult> {
-    this.logger.log(`Cash payment verified for order ${input.providerOrderId} (offline confirmation)`);
+    this.logger.log(
+      `Cash payment verified for order ${input.providerOrderId} (offline confirmation)`,
+    );
     return { isSuccess: true };
   }
 

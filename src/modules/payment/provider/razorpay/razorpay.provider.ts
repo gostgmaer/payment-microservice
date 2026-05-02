@@ -17,6 +17,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { Provider } from '@prisma/client';
+import Razorpay from 'razorpay';
 import { AppConfigService } from '../../../config/app-config.service';
 import {
   IPaymentProvider,
@@ -37,11 +38,8 @@ export class RazorpayProvider implements IPaymentProvider {
 
   constructor(private readonly config: AppConfigService) {
     // Only instantiate SDK when Razorpay is enabled; guards against empty credentials.
-    // Uses require() to avoid esModuleInterop issues with Razorpay's CJS export.
     if (config.razorpayEnabled) {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const RazorpaySdk = require('razorpay');
-      this.razorpay = new RazorpaySdk({
+      this.razorpay = new Razorpay({
         key_id: config.razorpayKeyId,
         key_secret: config.razorpayKeySecret,
       });
@@ -166,7 +164,10 @@ export class RazorpayProvider implements IPaymentProvider {
           providerSubscriptionId: subscription.id,
           subscriptionId: subscription.id,
           subscriptionStatus: this.mapSubscriptionStatus(status),
-          trialStart: trialEnd && trialEnd > Math.floor(Date.now() / 1000) ? Math.floor(Date.now() / 1000) : undefined,
+          trialStart:
+            trialEnd && trialEnd > Math.floor(Date.now() / 1000)
+              ? Math.floor(Date.now() / 1000)
+              : undefined,
           trialEnd,
           currentPeriodStart,
           currentPeriodEnd,
@@ -232,9 +233,7 @@ export class RazorpayProvider implements IPaymentProvider {
     }
 
     // Razorpay webhook signature: SHA-256 HMAC of raw body with webhook_secret
-    const expected = createHmac('sha256', webhookSecret)
-      .update(rawBody)
-      .digest('hex');
+    const expected = createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
 
     const expectedBuf = Buffer.from(expected);
     const receivedBuf = Buffer.from(signature);

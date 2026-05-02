@@ -256,7 +256,9 @@ export class WebhookService {
     const periodStart = this.fromUnixSeconds(subscription.current_period_start);
     const periodEnd = this.fromUnixSeconds(subscription.current_period_end);
     if (!periodStart || !periodEnd) {
-      this.logger.warn(`Stripe subscription ${subscription.id} missing period bounds; skipping sync`);
+      this.logger.warn(
+        `Stripe subscription ${subscription.id} missing period bounds; skipping sync`,
+      );
       return;
     }
 
@@ -352,22 +354,24 @@ export class WebhookService {
       case 'subscription.halted':
       case 'subscription.cancelled':
       case 'subscription.completed': {
-        const subscription = (body as {
-          payload: {
-            subscription?: {
-              entity: {
-                id: string;
-                status?: string;
-                notes?: Record<string, string>;
-                current_start?: number;
-                current_end?: number;
-                start_at?: number;
-                charge_at?: number;
-                ended_at?: number;
+        const subscription = (
+          body as {
+            payload: {
+              subscription?: {
+                entity: {
+                  id: string;
+                  status?: string;
+                  notes?: Record<string, string>;
+                  current_start?: number;
+                  current_end?: number;
+                  start_at?: number;
+                  charge_at?: number;
+                  ended_at?: number;
+                };
               };
             };
-          };
-        }).payload.subscription?.entity;
+          }
+        ).payload.subscription?.entity;
 
         if (subscription) {
           await this.syncRazorpaySubscription(subscription, body.event);
@@ -456,7 +460,9 @@ export class WebhookService {
     const periodStart = this.fromUnixSeconds(subscription.current_start ?? subscription.start_at);
     const periodEnd = this.fromUnixSeconds(subscription.current_end ?? subscription.charge_at);
     if (!periodStart || !periodEnd) {
-      this.logger.warn(`Razorpay subscription ${subscription.id} missing period bounds; skipping sync`);
+      this.logger.warn(
+        `Razorpay subscription ${subscription.id} missing period bounds; skipping sync`,
+      );
       return;
     }
 
@@ -492,10 +498,7 @@ export class WebhookService {
     return null;
   }
 
-  private mapRazorpayStatus(
-    status?: string,
-    eventType?: string,
-  ): SubscriptionStatus | null {
+  private mapRazorpayStatus(status?: string, eventType?: string): SubscriptionStatus | null {
     if (eventType === 'subscription.cancelled' || eventType === 'subscription.completed') {
       return SubscriptionStatus.CANCELLED;
     }

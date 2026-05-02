@@ -168,7 +168,8 @@ export class PaymentMethodService {
     });
 
     const belongsToCustomer =
-      completed.metadata.internalCustomerId === dto.customerId && completed.metadata.tenantId === dto.tenantId;
+      completed.metadata.internalCustomerId === dto.customerId &&
+      completed.metadata.tenantId === dto.tenantId;
     const matchesExistingProfile =
       !existingProfile || existingProfile.providerCustomerId === completed.providerCustomerId;
 

@@ -2,7 +2,9 @@
  * Currency utility tests — validates BigInt monetary arithmetic.
  */
 
-import { toSmallestUnit, fromSmallestUnit, formatCurrency, subtractAmounts } from './currency.util';
+/// <reference types="jest" />
+
+import { toSmallestUnit, fromSmallestUnit, subtractAmounts } from './currency.util';
 import Decimal from 'decimal.js';
 
 describe('currency.util', () => {

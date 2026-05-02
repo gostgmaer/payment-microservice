@@ -24,14 +24,9 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     const enableDbQueryLogging = config.get('ENABLE_DB_QUERY_LOGGING') === 'true';
 
     super({
-      log:
-        enableDbQueryLogging
-          ? [
-              { emit: 'event', level: 'query' },
-              'warn',
-              'error',
-            ]
-          : ['warn', 'error'],
+      log: enableDbQueryLogging
+        ? [{ emit: 'event', level: 'query' }, 'warn', 'error']
+        : ['warn', 'error'],
       errorFormat: 'minimal',
     });
 

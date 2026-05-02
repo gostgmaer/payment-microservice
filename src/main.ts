@@ -13,12 +13,16 @@
  */
 
 import { NestFactory, Reflector } from '@nestjs/core';
-import { ClassSerializerInterceptor, Logger as NestLogger, ValidationPipe, VersioningType } from '@nestjs/common';
+import {
+  ClassSerializerInterceptor,
+  Logger as NestLogger,
+  ValidationPipe,
+  VersioningType,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
-// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any
-const compression = require('compression') as (...args: any[]) => any;
+import compression from 'compression';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 
@@ -34,13 +38,18 @@ async function bootstrap() {
   const port = configService.get<number>('PORT', 3000);
   const env = configService.get<string>('NODE_ENV', 'development');
   const apiPrefix = configService.get<string>('API_PREFIX', 'api/v1');
-  const structuredLoggingEnabled = configService.get<boolean>('app.structuredLoggingEnabled', false);
+  const structuredLoggingEnabled = configService.get<boolean>(
+    'app.structuredLoggingEnabled',
+    false,
+  );
 
   if (structuredLoggingEnabled) {
     app.useLogger(app.get(PinoLogger));
   }
 
-  const bootstrapLogger = structuredLoggingEnabled ? app.get(PinoLogger) : new NestLogger('Bootstrap');
+  const bootstrapLogger = structuredLoggingEnabled
+    ? app.get(PinoLogger)
+    : new NestLogger('Bootstrap');
 
   // ── Trust proxy (Nginx / AWS ALB / GCP LB) ─────────────────────────────
   const expressApp = app.getHttpAdapter().getInstance();
