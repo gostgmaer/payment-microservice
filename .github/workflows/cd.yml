@@ -344,6 +344,52 @@ jobs:
               return 1
             }
 
+            sync_payment_nginx() {
+              local selected_port="$1"
+              local conf_path="/etc/nginx/conf.d/payment.easydev.in.conf"
+
+              sudo tee "$conf_path" >/dev/null <<EOF
+            server {
+                listen 80;
+                listen [::]:80;
+                server_name payment.easydev.in;
+
+                location / {
+                    proxy_pass http://127.0.0.1:${selected_port};
+                    proxy_http_version 1.1;
+                    proxy_set_header Host \$host;
+                    proxy_set_header X-Real-IP \$remote_addr;
+                    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+                    proxy_set_header X-Forwarded-Proto https;
+                    proxy_set_header Connection "";
+                }
+            }
+
+            server {
+                listen 443 ssl;
+                listen [::]:443 ssl;
+                server_name payment.easydev.in;
+
+                ssl_certificate     /etc/nginx/ssl/lsp-api.easydev.in.crt;
+                ssl_certificate_key /etc/nginx/ssl/lsp-api.easydev.in.key;
+                ssl_protocols TLSv1.2 TLSv1.3;
+
+                location / {
+                    proxy_pass http://127.0.0.1:${selected_port};
+                    proxy_http_version 1.1;
+                    proxy_set_header Host \$host;
+                    proxy_set_header X-Real-IP \$remote_addr;
+                    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+                    proxy_set_header X-Forwarded-Proto https;
+                    proxy_set_header Connection "";
+                }
+            }
+            EOF
+
+              sudo nginx -t
+              sudo systemctl reload nginx
+            }
+
             if [[ ! -f "$ARCHIVE_PATH" ]]; then
               echo "Missing image archive: $ARCHIVE_PATH"
               exit 1
@@ -445,6 +491,7 @@ jobs:
             docker compose --env-file .env -f docker-compose.yml up -d payment-service payment-worker
             wait_for_health easydev-payment-service
             wait_for_running easydev-payment-worker
+            sync_payment_nginx "$SELECTED_PORT"
 
             rm -rf "$TMP_DIR"
             rm -f "$PREVIOUS_DEPLOY_ENV"
