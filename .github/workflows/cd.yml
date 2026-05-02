@@ -47,7 +47,7 @@ jobs:
         run: pnpm run typecheck
 
       - name: Test
-        run: pnpm run test -- --passWithNoTests
+        run: pnpm exec jest --passWithNoTests
 
       - name: Build
         run: pnpm run build
