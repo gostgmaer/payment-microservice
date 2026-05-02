@@ -79,6 +79,11 @@ RUN addgroup --system --gid 1001 nodejs \
 
 WORKDIR /app
 
+# Runtime does not need package managers; remove them to reduce attack surface
+# and avoid npm-bundled library CVEs in final image scans.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack && \
+    rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
+
 # Use --chown on COPY to avoid a slow `chown -R` on node_modules
 COPY --from=builder --chown=nestjs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nestjs:nodejs /app/dist         ./dist

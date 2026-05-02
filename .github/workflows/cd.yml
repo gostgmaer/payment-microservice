@@ -241,7 +241,7 @@ jobs:
             set_with_backup "$CORE_ENV" "PAYMENT_IMAGE" "PAYMENT_IMAGE_BACKUP" "$NEW_IMAGE"
 
             cd "$DEPLOY_DIR"
-            docker compose --env-file .env.core -f compose.core.yml run --rm --no-deps payment-service npx prisma db push
+            docker compose --env-file .env.core -f compose.core.yml run --rm --no-deps payment-service ./node_modules/.bin/prisma db push
             docker compose --env-file .env.core -f compose.core.yml up -d --no-deps payment-service
             wait_for_health easydev-payment-service
 
