@@ -65,7 +65,8 @@ async function bootstrap() {
 
   // ── CORS ────────────────────────────────────────────────────────────────
   app.enableCors({
-    origin: configService.get<string>('CORS_ORIGIN', '*'),
+    // Gateway is the browser-facing CORS enforcement point.
+    origin: true,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
   });
