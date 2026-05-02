@@ -11,8 +11,7 @@ permissions:
 
 env:
   NEW_IMAGE: easydev-payment-service:latest
-  IMAGE_ARCHIVE: easydev-payment-service-${{ github.sha }}.tar.gz
-  PAYMENT_DEPLOY_DIR: /home/opc/payment-only
+  IMAGE_ARCHIVE: easydev-payment-service-latest.tar.gz
 
 jobs:
   code-quality:
@@ -146,28 +145,6 @@ jobs:
     needs: build
     environment: production
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Select env source file
-        id: env_source
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [[ -f .env ]]; then
-            SOURCE_ENV_FILE=".env"
-          elif [[ -f .env.production ]]; then
-            SOURCE_ENV_FILE=".env.production"
-          elif [[ -f .env.example ]]; then
-            SOURCE_ENV_FILE=".env.example"
-          else
-            echo "No env source file found. Expected one of: .env, .env.production, .env.example"
-            exit 1
-          fi
-
-          echo "source_env_file=$SOURCE_ENV_FILE" >> "$GITHUB_OUTPUT"
-
       - name: Download image archive
         uses: actions/download-artifact@v4
         with:
@@ -181,126 +158,57 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           source: ${{ env.IMAGE_ARCHIVE }}
-          target: /tmp/payment-deploy/
-
-      - name: Copy standalone compose file to Oracle VM
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          source: deploy/standalone/docker-compose.yml
-          target: /tmp/payment-deploy/
-
-      - name: Copy payment env source file to Oracle VM
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          source: ${{ steps.env_source.outputs.source_env_file }}
-          target: /tmp/payment-deploy/
+          target: /tmp/
 
       - name: Deploy on Oracle VM
         uses: appleboy/ssh-action@v1.0.3
         env:
           NEW_IMAGE: ${{ env.NEW_IMAGE }}
           IMAGE_ARCHIVE: ${{ env.IMAGE_ARCHIVE }}
-          PAYMENT_DEPLOY_DIR: ${{ env.PAYMENT_DEPLOY_DIR }}
-          SOURCE_ENV_FILE: ${{ steps.env_source.outputs.source_env_file }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
-          envs: NEW_IMAGE,IMAGE_ARCHIVE,PAYMENT_DEPLOY_DIR,SOURCE_ENV_FILE
+          envs: NEW_IMAGE,IMAGE_ARCHIVE
           script: |
             set -euo pipefail
 
-            TMP_DIR="/tmp/payment-deploy"
-            ARCHIVE_PATH="${TMP_DIR}/${IMAGE_ARCHIVE}"
-            DEPLOY_DIR="${PAYMENT_DEPLOY_DIR}"
-            DEPLOY_ENV="${DEPLOY_DIR}/.env"
-            PREVIOUS_DEPLOY_ENV="${DEPLOY_DIR}/.env.previous"
-            DEPLOY_COMPOSE="${DEPLOY_DIR}/docker-compose.yml"
-            SOURCE_ENV_BASENAME="$(basename "${SOURCE_ENV_FILE}")"
-            SOURCE_ENV_PATH="${TMP_DIR}/${SOURCE_ENV_BASENAME}"
-            SOURCE_COMPOSE_PATH="${TMP_DIR}/deploy/standalone/docker-compose.yml"
-            CORE_DIR="/home/opc/easydev-backends/deploy/oracle-vm"
+            DEPLOY_DIR="/home/opc/easydev-backends/deploy/oracle-vm"
+            CORE_ENV="${DEPLOY_DIR}/.env.core"
+            APPS_ENV="${DEPLOY_DIR}/.env.apps"
+            ARCHIVE_PATH="/tmp/${IMAGE_ARCHIVE}"
 
-            if [[ ! -f "$SOURCE_COMPOSE_PATH" && -f "${TMP_DIR}/docker-compose.yml" ]]; then
-              SOURCE_COMPOSE_PATH="${TMP_DIR}/docker-compose.yml"
-            fi
-
-            pick_first_free_port() {
-              local p
-              for p in $(seq 3200 3210); do
-                if ! ss -ltnH | grep -q ":${p} "; then
-                  echo "$p"
-                  return 0
-                fi
-              done
-              return 1
-            }
-
-            get_key() {
-              local file="$1"
-              local key="$2"
-              grep "^${key}=" "$file" | tail -n 1 | cut -d= -f2- || true
-            }
-
-            get_container_key() {
-              local container_name="$1"
-              local key="$2"
-              docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container_name" 2>/dev/null | grep "^${key}=" | tail -n 1 | cut -d= -f2- || true
-            }
-
-            ensure_non_empty_keys() {
-              local file="$1"
-              shift
-              local key value missing=()
-              for key in "$@"; do
-                value="$(get_key "$file" "$key")"
-                if [[ -z "$value" ]]; then
-                  missing+=("$key")
-                fi
-              done
-              if [[ ${#missing[@]} -gt 0 ]]; then
-                echo "Missing required env keys: ${missing[*]}"
-                return 1
-              fi
-            }
-
-            set_key() {
+            ensure_key() {
               local file="$1"
               local key="$2"
               local value="$3"
-              local escaped
-
-              escaped="$(printf '%s' "$value" | sed -e 's/[\\&|]/\\\\&/g')"
-
               if grep -q "^${key}=" "$file"; then
-                sed -i "s|^${key}=.*|${key}=${escaped}|" "$file"
+                return 0
               else
                 printf '%s=%s\n' "$key" "$value" >> "$file"
               fi
             }
 
-            restore_key_if_missing() {
-              local key="$1"
-              local current_value previous_value
+            set_with_backup() {
+              local file="$1"
+              local key="$2"
+              local backup_key="$3"
+              local new_value="$4"
+              local old_value
 
-              current_value="$(get_key "$DEPLOY_ENV" "$key")"
-              if [[ -n "$current_value" ]]; then
-                return 0
+              old_value="$(grep "^${key}=" "$file" | tail -n 1 | cut -d= -f2- || true)"
+              if [[ -n "$old_value" && "$old_value" != "$new_value" ]]; then
+                if grep -q "^${backup_key}=" "$file"; then
+                  sed -i "s|^${backup_key}=.*|${backup_key}=${old_value}|" "$file"
+                else
+                  printf '%s=%s\n' "$backup_key" "$old_value" >> "$file"
+                fi
               fi
 
-              previous_value="$(get_key "$PREVIOUS_DEPLOY_ENV" "$key")"
-              if [[ -z "$previous_value" ]] && docker inspect easydev-payment-service >/dev/null 2>&1; then
-                previous_value="$(get_container_key easydev-payment-service "$key")"
-              fi
-
-              if [[ -n "$previous_value" ]]; then
-                set_key "$DEPLOY_ENV" "$key" "$previous_value"
+              if grep -q "^${key}=" "$file"; then
+                sed -i "s|^${key}=.*|${key}=${new_value}|" "$file"
+              else
+                printf '%s=%s\n' "$key" "$new_value" >> "$file"
               fi
             }
 
@@ -324,180 +232,50 @@ jobs:
               return 1
             }
 
-            wait_for_running() {
-              local container_name="$1"
-              local retries="${2:-40}"
-              local sleep_seconds="${3:-3}"
-              local state
-
-              for ((i=1; i<=retries; i++)); do
-                state="$(docker inspect --format '{{.State.Status}}' "$container_name" 2>/dev/null || true)"
-                if [[ "$state" == "running" ]]; then
-                  echo "Running: $container_name"
-                  return 0
-                fi
-                sleep "$sleep_seconds"
-              done
-
-              echo "Container did not reach running state in time: $container_name"
-              docker logs --tail 120 "$container_name" || true
-              return 1
-            }
-
-            sync_payment_nginx() {
-              local selected_port="$1"
-              local conf_path="/etc/nginx/conf.d/payment.easydev.in.conf"
-
-              sudo tee "$conf_path" >/dev/null <<EOF
-            server {
-                listen 80;
-                listen [::]:80;
-                server_name payment.easydev.in;
-
-                location / {
-                    proxy_pass http://127.0.0.1:${selected_port};
-                    proxy_http_version 1.1;
-                    proxy_set_header Host \$host;
-                    proxy_set_header X-Real-IP \$remote_addr;
-                    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-                    proxy_set_header X-Forwarded-Proto https;
-                    proxy_set_header Connection "";
-                }
-            }
-
-            server {
-                listen 443 ssl;
-                listen [::]:443 ssl;
-                server_name payment.easydev.in;
-
-                ssl_certificate     /etc/nginx/ssl/lsp-api.easydev.in.crt;
-                ssl_certificate_key /etc/nginx/ssl/lsp-api.easydev.in.key;
-                ssl_protocols TLSv1.2 TLSv1.3;
-
-                location / {
-                    proxy_pass http://127.0.0.1:${selected_port};
-                    proxy_http_version 1.1;
-                    proxy_set_header Host \$host;
-                    proxy_set_header X-Real-IP \$remote_addr;
-                    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-                    proxy_set_header X-Forwarded-Proto https;
-                    proxy_set_header Connection "";
-                }
-            }
-            EOF
-
-              sudo nginx -t
-              sudo systemctl reload nginx
-            }
-
             if [[ ! -f "$ARCHIVE_PATH" ]]; then
               echo "Missing image archive: $ARCHIVE_PATH"
               exit 1
             fi
 
-            if [[ ! -f "$SOURCE_ENV_PATH" ]]; then
-              echo "Missing env source file: $SOURCE_ENV_PATH"
+            if [[ ! -f "$CORE_ENV" ]]; then
+              echo "Missing core env file: $CORE_ENV"
               exit 1
             fi
 
-            if [[ ! -f "$SOURCE_COMPOSE_PATH" ]]; then
-              echo "Missing standalone compose file: $SOURCE_COMPOSE_PATH"
+            if [[ ! -f "$APPS_ENV" ]]; then
+              echo "Missing apps env file: $APPS_ENV"
               exit 1
-            fi
-
-            mkdir -p "$DEPLOY_DIR"
-
-            previous_image="$(get_key "$DEPLOY_ENV" "PAYMENT_IMAGE")"
-
-            if [[ -f "$DEPLOY_ENV" ]]; then
-              cp "$DEPLOY_ENV" "$PREVIOUS_DEPLOY_ENV"
-            else
-              : > "$PREVIOUS_DEPLOY_ENV"
-            fi
-
-            cp "$SOURCE_ENV_PATH" "$DEPLOY_ENV"
-            cp "$SOURCE_COMPOSE_PATH" "$DEPLOY_COMPOSE"
-
-            restore_key_if_missing JWT_SECRET
-            restore_key_if_missing IAM_SERVICE_API_KEY
-            restore_key_if_missing API_KEY_HASH
-            restore_key_if_missing REDIS_PASSWORD
-            restore_key_if_missing STRIPE_SECRET_KEY
-            restore_key_if_missing STRIPE_WEBHOOK_SECRET
-            restore_key_if_missing RAZORPAY_KEY_ID
-            restore_key_if_missing RAZORPAY_KEY_SECRET
-            restore_key_if_missing RAZORPAY_WEBHOOK_SECRET
-
-            IAM_NETWORK_NAME="$(get_key "$DEPLOY_ENV" "IAM_DOCKER_NETWORK")"
-            if [[ -z "$IAM_NETWORK_NAME" ]]; then
-              IAM_NETWORK_NAME="iam-auth-only_iam-auth-net"
-            fi
-
-            if ! docker network inspect "$IAM_NETWORK_NAME" >/dev/null 2>&1; then
-              echo "Required IAM Docker network not found: $IAM_NETWORK_NAME"
-              exit 1
-            fi
-
-            if ! docker inspect iam-auth-service >/dev/null 2>&1; then
-              echo "Required IAM container not found: iam-auth-service"
-              exit 1
-            fi
-
-            set_key "$DEPLOY_ENV" "IAM_DOCKER_NETWORK" "$IAM_NETWORK_NAME"
-            set_key "$DEPLOY_ENV" "IAM_SERVICE_URL" "http://iam-auth-service:3100"
-
-            ensure_non_empty_keys "$DEPLOY_ENV" DATABASE_URL JWT_SECRET IAM_SERVICE_URL IAM_SERVICE_API_KEY
-
-            if [[ "$(get_key "$DEPLOY_ENV" "STRIPE_ENABLED")" == "true" ]]; then
-              ensure_non_empty_keys "$DEPLOY_ENV" STRIPE_SECRET_KEY
-            fi
-
-            if [[ "$(get_key "$DEPLOY_ENV" "RAZORPAY_ENABLED")" == "true" ]]; then
-              ensure_non_empty_keys "$DEPLOY_ENV" RAZORPAY_KEY_ID RAZORPAY_KEY_SECRET
-            fi
-
-            SELECTED_PORT="$(pick_first_free_port || true)"
-            if [[ -z "$SELECTED_PORT" ]]; then
-              echo "No free host port in range 3200-3210"
-              exit 1
-            fi
-
-            set_key "$DEPLOY_ENV" "PAYMENT_IMAGE" "$NEW_IMAGE"
-            set_key "$DEPLOY_ENV" "PAYMENT_HOST_PORT" "$SELECTED_PORT"
-
-            if [[ -n "$previous_image" && "$previous_image" != "$NEW_IMAGE" ]]; then
-              set_key "$DEPLOY_ENV" "PAYMENT_IMAGE_BACKUP" "$previous_image"
-            else
-              set_key "$DEPLOY_ENV" "PAYMENT_IMAGE_BACKUP" ""
             fi
 
             docker load -i "$ARCHIVE_PATH" >/dev/null
             rm -f "$ARCHIVE_PATH"
 
-            if [[ -f "${CORE_DIR}/compose.core.yml" && -f "${CORE_DIR}/.env.core" ]]; then
-              cd "$CORE_DIR"
-              docker compose --env-file .env.core -f compose.core.yml stop payment-service || true
-              docker compose --env-file .env.core -f compose.core.yml rm -f payment-service || true
-              docker compose --env-file .env.core -f compose.core.yml stop payment-worker || true
-              docker compose --env-file .env.core -f compose.core.yml rm -f payment-worker || true
-            fi
+            ensure_key "$CORE_ENV" "PAYMENT_IMAGE" "easydev-payment-service:latest"
+            ensure_key "$CORE_ENV" "PAYMENT_IMAGE_BACKUP" ""
+
+            set_with_backup "$CORE_ENV" "PAYMENT_IMAGE" "PAYMENT_IMAGE_BACKUP" "$NEW_IMAGE"
 
             cd "$DEPLOY_DIR"
-            docker compose --env-file .env -f docker-compose.yml up -d payment-postgres payment-redis
-            wait_for_health payment-postgres
-            wait_for_health payment-redis
-
-            docker compose --env-file .env -f docker-compose.yml run --rm --no-deps payment-service ./node_modules/.bin/prisma db push
-            docker compose --env-file .env -f docker-compose.yml up -d payment-service payment-worker
+            docker compose --env-file .env.core -f compose.core.yml run --rm --no-deps payment-service sh -lc '
+              if [ -x ./node_modules/.bin/prisma ]; then
+                ./node_modules/.bin/prisma db push
+              else
+                npx prisma db push
+              fi
+            '
+            docker compose --env-file .env.core -f compose.core.yml up -d --no-deps payment-service
             wait_for_health easydev-payment-service
-            wait_for_running easydev-payment-worker
-            sync_payment_nginx "$SELECTED_PORT"
 
-            rm -rf "$TMP_DIR"
-            rm -f "$PREVIOUS_DEPLOY_ENV"
+            docker rm -f payment-postgres payment-redis >/dev/null 2>&1 || true
+            docker network rm payment-only_payment-net >/dev/null 2>&1 || true
 
-            echo "PAYMENT_SELECTED_PORT=${SELECTED_PORT}"
-            echo "Standalone payment deployed without restarting unrelated services."
+            PAYMENT_PUBLIC_HOST="$(grep '^PAYMENT_PUBLIC_HOST=' "$APPS_ENV" | tail -n 1 | cut -d= -f2- || true)"
+            PAYMENT_PUBLIC_HOST="${PAYMENT_PUBLIC_HOST:-payment.easydev.in}"
+            if ! curl --fail --max-time 20 --silent --show-error "https://${PAYMENT_PUBLIC_HOST}/api/v1/health" >/dev/null; then
+              echo "Warning: public payment health check failed at https://${PAYMENT_PUBLIC_HOST}/api/v1/health"
+            fi
+
+            echo "Payment deployed in shared oracle-vm stack successfully."
 
   cleanup:
     name: cleanup
@@ -515,30 +293,38 @@ jobs:
           script: |
             set -euo pipefail
 
-            DEPLOY_DIR="/home/opc/payment-only"
-            DEPLOY_ENV="${DEPLOY_DIR}/.env"
+            DEPLOY_DIR="/home/opc/easydev-backends/deploy/oracle-vm"
+            DEPLOY_ENV="${DEPLOY_DIR}/.env.core"
             CONTAINER="easydev-payment-service"
             BACKUP_REF="$(grep '^PAYMENT_IMAGE_BACKUP=' "$DEPLOY_ENV" 2>/dev/null | tail -n 1 | cut -d= -f2- || true)"
 
-            CURRENT_ID="$(docker inspect --format '{{.Image}}' "$CONTAINER" 2>/dev/null || true)"
-            BACKUP_ID="$(docker image inspect --format '{{.Id}}' "$BACKUP_REF" 2>/dev/null || true)"
+            cleanup_repo_keep_current_and_backup() {
+              local container_name="$1"
+              local backup_ref="$2"
+              local current_ref current_repo current_id backup_id
 
-            cleanup_repo() {
-              local repo="$1"
+              current_ref="$(docker inspect --format '{{.Config.Image}}' "$container_name")"
+              current_repo="${current_ref%:*}"
+              current_id="$(docker inspect --format '{{.Image}}' "$container_name")"
+              backup_id="$(docker image inspect --format '{{.Id}}' "$backup_ref" 2>/dev/null || true)"
+
               while IFS=' ' read -r image_ref image_id; do
                 [[ -z "$image_ref" || -z "$image_id" ]] && continue
-                if [[ -n "$CURRENT_ID" && "$image_id" == "$CURRENT_ID" ]]; then
+                if [[ "$image_id" == "$current_id" ]]; then
                   continue
                 fi
-                if [[ -n "$BACKUP_ID" && "$image_id" == "$BACKUP_ID" ]]; then
+                if [[ -n "$backup_id" && "$image_id" == "$backup_id" ]]; then
                   continue
                 fi
                 docker rmi "$image_ref" >/dev/null 2>&1 || true
-              done < <(docker images "$repo" --format '{{.Repository}}:{{.Tag}} {{.ID}}' | sort -u)
+              done < <(docker images "$current_repo" --format '{{.Repository}}:{{.Tag}} {{.ID}}' | sort -u)
             }
 
-            cleanup_repo easydev-payment-service
-            cleanup_repo easydev-core-payment-service
+            if docker inspect "$CONTAINER" >/dev/null 2>&1; then
+              cleanup_repo_keep_current_and_backup "$CONTAINER" "$BACKUP_REF"
+            fi
+
+            docker image prune -f >/dev/null 2>&1 || true
 
   tag:
     name: tag
