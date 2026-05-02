@@ -51,6 +51,16 @@ RUN for i in 1 2 3; do \
 COPY . .
 RUN pnpm run build
 
+# Compile prisma/seed.ts to standalone JS so production images can run default seed
+# without ts-node/devDependencies.
+RUN node node_modules/typescript/bin/tsc \
+  --outDir dist/seed \
+  --module commonjs --target es2019 \
+  --esModuleInterop true --skipLibCheck true \
+  --strict false --noEmitOnError false \
+  --rootDir . \
+  prisma/seed.ts
+
 # Strip dev deps — removes typescript, @nestjs/cli, jest, eslint, @types/*, etc.
 # prisma CLI remains because it is listed in dependencies (needed for migrate deploy).
 RUN pnpm prune --prod
@@ -82,7 +92,7 @@ ENV CHECKPOINT_DISABLE=1
 EXPOSE 4000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/v1/health || exit 1
+  CMD wget --no-verbose --tries=1 --spider "http://localhost:${PORT:-4000}/api/v1/health" || exit 1
 
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 CMD ["sh", "-c", "./node_modules/.bin/prisma migrate deploy && node dist/main"]
