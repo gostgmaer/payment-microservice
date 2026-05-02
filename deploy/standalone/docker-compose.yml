@@ -1,0 +1,107 @@
+name: payment-only
+
+services:
+  payment-postgres:
+    image: postgres:16-alpine
+    container_name: payment-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-payment_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-payment_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+    volumes:
+      - payment-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-payment_user} -d ${POSTGRES_DB:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - payment-net
+
+  payment-redis:
+    image: redis:7-alpine
+    container_name: payment-redis
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command:
+      - sh
+      - -c
+      - |
+        if [ -n "$$REDIS_PASSWORD" ]; then
+          exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
+        fi
+        exec redis-server --appendonly yes
+    volumes:
+      - payment-redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG; else redis-cli ping | grep -q PONG; fi"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - payment-net
+
+  payment-service:
+    image: ${PAYMENT_IMAGE}
+    container_name: easydev-payment-service
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: 3200
+      API_PREFIX: ${API_PREFIX:-api/v1}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-payment_user}:${POSTGRES_PASSWORD:-payment_pass}@payment-postgres:5432/${POSTGRES_DB:-postgres}?schema=payment
+      REDIS_HOST: payment-redis
+      REDIS_PORT: 6379
+    depends_on:
+      payment-postgres:
+        condition: service_healthy
+      payment-redis:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${PAYMENT_HOST_PORT}:3200"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:3200/api/v1/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+    command: node dist/main
+    networks:
+      - payment-net
+
+  payment-worker:
+    image: ${PAYMENT_IMAGE}
+    container_name: easydev-payment-worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-payment_user}:${POSTGRES_PASSWORD:-payment_pass}@payment-postgres:5432/${POSTGRES_DB:-postgres}?schema=payment
+      REDIS_HOST: payment-redis
+      REDIS_PORT: 6379
+    command: node dist/worker
+    healthcheck:
+      disable: true
+    depends_on:
+      payment-postgres:
+        condition: service_healthy
+      payment-redis:
+        condition: service_healthy
+      payment-service:
+        condition: service_healthy
+    networks:
+      - payment-net
+
+volumes:
+  payment-postgres-data:
+  payment-redis-data:
+
+networks:
+  payment-net:
+    driver: bridge
