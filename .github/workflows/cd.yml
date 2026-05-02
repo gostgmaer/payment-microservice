@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 env:
-  NEW_IMAGE: easydev-payment-service:sha-${{ github.sha }}
+  NEW_IMAGE: easydev-payment-service:latest
   IMAGE_ARCHIVE: easydev-payment-service-${{ github.sha }}.tar.gz
   PAYMENT_DEPLOY_DIR: /home/opc/payment-only
 
