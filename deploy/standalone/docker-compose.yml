@@ -73,6 +73,7 @@ services:
     command: node dist/main
     networks:
       - payment-net
+      - iam-auth-net
 
   payment-worker:
     image: ${PAYMENT_IMAGE}
@@ -97,6 +98,7 @@ services:
         condition: service_healthy
     networks:
       - payment-net
+      - iam-auth-net
 
 volumes:
   payment-postgres-data:
@@ -105,3 +107,6 @@ volumes:
 networks:
   payment-net:
     driver: bridge
+  iam-auth-net:
+    external: true
+    name: ${IAM_DOCKER_NETWORK:-iam-auth-only_iam-auth-net}

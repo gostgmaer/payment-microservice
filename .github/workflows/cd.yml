@@ -336,6 +336,24 @@ jobs:
             cp "$SOURCE_ENV_PATH" "$DEPLOY_ENV"
             cp "$SOURCE_COMPOSE_PATH" "$DEPLOY_COMPOSE"
 
+            IAM_NETWORK_NAME="$(get_key "$DEPLOY_ENV" "IAM_DOCKER_NETWORK")"
+            if [[ -z "$IAM_NETWORK_NAME" ]]; then
+              IAM_NETWORK_NAME="iam-auth-only_iam-auth-net"
+            fi
+
+            if ! docker network inspect "$IAM_NETWORK_NAME" >/dev/null 2>&1; then
+              echo "Required IAM Docker network not found: $IAM_NETWORK_NAME"
+              exit 1
+            fi
+
+            if ! docker inspect iam-auth-service >/dev/null 2>&1; then
+              echo "Required IAM container not found: iam-auth-service"
+              exit 1
+            fi
+
+            set_key "$DEPLOY_ENV" "IAM_DOCKER_NETWORK" "$IAM_NETWORK_NAME"
+            set_key "$DEPLOY_ENV" "IAM_SERVICE_URL" "http://iam-auth-service:3100"
+
             ensure_non_empty_keys "$DEPLOY_ENV" DATABASE_URL JWT_SECRET IAM_SERVICE_URL IAM_SERVICE_API_KEY
 
             if [[ "$(get_key "$DEPLOY_ENV" "STRIPE_ENABLED")" == "true" ]]; then
