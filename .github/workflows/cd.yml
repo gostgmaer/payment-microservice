@@ -46,6 +46,9 @@ jobs:
       - name: Typecheck
         run: pnpm run typecheck
 
+      - name: Test
+        run: pnpm run test -- --passWithNoTests
+
       - name: Build
         run: pnpm run build
 
