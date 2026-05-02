@@ -220,6 +220,7 @@ jobs:
             ARCHIVE_PATH="${TMP_DIR}/${IMAGE_ARCHIVE}"
             DEPLOY_DIR="${PAYMENT_DEPLOY_DIR}"
             DEPLOY_ENV="${DEPLOY_DIR}/.env"
+            PREVIOUS_DEPLOY_ENV="${DEPLOY_DIR}/.env.previous"
             DEPLOY_COMPOSE="${DEPLOY_DIR}/docker-compose.yml"
             SOURCE_ENV_BASENAME="$(basename "${SOURCE_ENV_FILE}")"
             SOURCE_ENV_PATH="${TMP_DIR}/${SOURCE_ENV_BASENAME}"
@@ -247,6 +248,12 @@ jobs:
               grep "^${key}=" "$file" | tail -n 1 | cut -d= -f2- || true
             }
 
+            get_container_key() {
+              local container_name="$1"
+              local key="$2"
+              docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container_name" 2>/dev/null | grep "^${key}=" | tail -n 1 | cut -d= -f2- || true
+            }
+
             ensure_non_empty_keys() {
               local file="$1"
               shift
@@ -267,10 +274,33 @@ jobs:
               local file="$1"
               local key="$2"
               local value="$3"
+              local escaped
+
+              escaped="$(printf '%s' "$value" | sed -e 's/[\\&|]/\\\\&/g')"
+
               if grep -q "^${key}=" "$file"; then
-                sed -i "s|^${key}=.*|${key}=${value}|" "$file"
+                sed -i "s|^${key}=.*|${key}=${escaped}|" "$file"
               else
                 printf '%s=%s\n' "$key" "$value" >> "$file"
+              fi
+            }
+
+            restore_key_if_missing() {
+              local key="$1"
+              local current_value previous_value
+
+              current_value="$(get_key "$DEPLOY_ENV" "$key")"
+              if [[ -n "$current_value" ]]; then
+                return 0
+              fi
+
+              previous_value="$(get_key "$PREVIOUS_DEPLOY_ENV" "$key")"
+              if [[ -z "$previous_value" ]] && docker inspect easydev-payment-service >/dev/null 2>&1; then
+                previous_value="$(get_container_key easydev-payment-service "$key")"
+              fi
+
+              if [[ -n "$previous_value" ]]; then
+                set_key "$DEPLOY_ENV" "$key" "$previous_value"
               fi
             }
 
@@ -333,8 +363,24 @@ jobs:
 
             previous_image="$(get_key "$DEPLOY_ENV" "PAYMENT_IMAGE")"
 
+            if [[ -f "$DEPLOY_ENV" ]]; then
+              cp "$DEPLOY_ENV" "$PREVIOUS_DEPLOY_ENV"
+            else
+              : > "$PREVIOUS_DEPLOY_ENV"
+            fi
+
             cp "$SOURCE_ENV_PATH" "$DEPLOY_ENV"
             cp "$SOURCE_COMPOSE_PATH" "$DEPLOY_COMPOSE"
+
+            restore_key_if_missing JWT_SECRET
+            restore_key_if_missing IAM_SERVICE_API_KEY
+            restore_key_if_missing API_KEY_HASH
+            restore_key_if_missing REDIS_PASSWORD
+            restore_key_if_missing STRIPE_SECRET_KEY
+            restore_key_if_missing STRIPE_WEBHOOK_SECRET
+            restore_key_if_missing RAZORPAY_KEY_ID
+            restore_key_if_missing RAZORPAY_KEY_SECRET
+            restore_key_if_missing RAZORPAY_WEBHOOK_SECRET
 
             IAM_NETWORK_NAME="$(get_key "$DEPLOY_ENV" "IAM_DOCKER_NETWORK")"
             if [[ -z "$IAM_NETWORK_NAME" ]]; then
@@ -401,6 +447,7 @@ jobs:
             wait_for_running easydev-payment-worker
 
             rm -rf "$TMP_DIR"
+            rm -f "$PREVIOUS_DEPLOY_ENV"
 
             echo "PAYMENT_SELECTED_PORT=${SELECTED_PORT}"
             echo "Standalone payment deployed without restarting unrelated services."
