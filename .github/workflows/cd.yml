@@ -372,6 +372,7 @@ jobs:
                 npx prisma db push
               fi
             '
+            docker rm -f easydev-payment-service >/dev/null 2>&1 || true
             docker compose --env-file .env.core -f compose.core.yml up -d --no-deps payment-service
             wait_for_health easydev-payment-service
 
