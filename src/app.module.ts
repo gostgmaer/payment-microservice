@@ -44,11 +44,12 @@ import { GlobalExceptionFilter } from './common/filters/global-exception.filter'
 import { CorrelationIdInterceptor } from './common/interceptors/correlation-id.interceptor';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { ConfigService } from '@nestjs/config';
+import configuration from './modules/config/configuration';
 
 /** BullMQ is opt-in. If BULLMQ_ENABLED=false the EventsModule (queues + workers)
  *  is excluded entirely — no Redis connection is required for queue processing
  *  and all operations run synchronously. Redis is still used for idempotency. */
-const bullmqEnabled = process.env.BULLMQ_ENABLED !== 'false';
+const bullmqEnabled = configuration().features.bullmqEnabled;
 const conditionalModules = bullmqEnabled ? [EventsModule] : [];
 
 @Module({

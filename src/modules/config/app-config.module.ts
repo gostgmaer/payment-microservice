@@ -22,9 +22,12 @@ import { AppConfigService } from './app-config.service';
         ENABLE_PINO_LOGGING: Joi.string().valid('true', 'false').default('false'),
         LOG_LEVEL: Joi.string().default('info'),
         DATABASE_URL: Joi.string().required(),
-        REDIS_HOST: Joi.string().default('localhost'),
+        REDIS_HOST: Joi.string().required(),
         REDIS_PORT: Joi.number().default(6379),
         JWT_SECRET: Joi.string().min(32).required(),
+        JWT_PUBLIC_KEY: Joi.string().allow('').optional(),
+        JWT_ISSUER: Joi.string().required(),
+        JWT_AUDIENCE: Joi.string().optional(),
         STRIPE_ENABLED: Joi.string().valid('true', 'false').default('false'),
         STRIPE_SECRET_KEY: Joi.when('STRIPE_ENABLED', {
           is: 'true',

@@ -5,85 +5,96 @@
  * and validates required values at startup.
  */
 
+import { getEnvOptional, getEnvRequired } from './runtime-env';
+
 export default () => ({
   app: {
-    port: parseInt(process.env.PORT ?? '3000', 10),
-    env: process.env.NODE_ENV ?? 'development',
-    prefix: process.env.API_PREFIX ?? 'api/v1',
-    logLevel: process.env.LOG_LEVEL ?? 'info',
-    structuredLoggingEnabled: process.env.ENABLE_PINO_LOGGING === 'true',
+    port: parseInt(getEnvOptional('PORT') ?? '3000', 10),
+    env: getEnvOptional('NODE_ENV') ?? 'development',
+    prefix: getEnvOptional('API_PREFIX') ?? 'api/v1',
+    logLevel: getEnvOptional('LOG_LEVEL') ?? 'info',
+    structuredLoggingEnabled: getEnvOptional('ENABLE_PINO_LOGGING') === 'true',
   },
 
   database: {
-    url: process.env.DATABASE_URL,
+    url: getEnvOptional('DATABASE_URL') ?? undefined,
   },
 
   redis: {
-    host: process.env.REDIS_HOST ?? 'localhost',
-    port: parseInt(process.env.REDIS_PORT ?? '6379', 10),
-    password: process.env.REDIS_PASSWORD ?? undefined,
-    db: parseInt(process.env.REDIS_DB ?? '0', 10),
+    host: getEnvRequired('REDIS_HOST'),
+    port: parseInt(getEnvOptional('REDIS_PORT') ?? '6379', 10),
+    password: getEnvOptional('REDIS_PASSWORD') ?? undefined,
+    db: parseInt(getEnvOptional('REDIS_DB') ?? '0', 10),
   },
 
   jwt: {
     // This service VERIFIES tokens issued by your external auth service.
-    // Set this to the same HS256 secret your auth service uses to sign tokens.
-    secret: process.env.JWT_SECRET,
+    // When JWT_PUBLIC_KEY (base64 SPKI PEM) is set the service uses RS256 asymmetric
+    // verification. Falls back to HS256 JWT_SECRET when JWT_PUBLIC_KEY is absent.
+    secret: getEnvOptional('JWT_SECRET') ?? undefined,
+    publicKey: getEnvOptional('JWT_PUBLIC_KEY')
+      ? Buffer.from(getEnvOptional('JWT_PUBLIC_KEY')!, 'base64').toString('utf8')
+      : undefined,
+    issuer: getEnvRequired('JWT_ISSUER'),
+    audience: getEnvOptional('JWT_AUDIENCE') ?? 'dashboard-app',
   },
 
   stripe: {
-    secretKey: process.env.STRIPE_SECRET_KEY,
-    publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
-    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
-    apiVersion: process.env.STRIPE_API_VERSION ?? '2024-04-10',
-    enabled: process.env.STRIPE_ENABLED === 'true',
+    secretKey: getEnvOptional('STRIPE_SECRET_KEY') ?? undefined,
+    publishableKey: getEnvOptional('STRIPE_PUBLISHABLE_KEY') ?? undefined,
+    webhookSecret: getEnvOptional('STRIPE_WEBHOOK_SECRET') ?? undefined,
+    apiVersion: getEnvOptional('STRIPE_API_VERSION') ?? '2024-04-10',
+    enabled: getEnvOptional('STRIPE_ENABLED') === 'true',
   },
 
   razorpay: {
-    keyId: process.env.RAZORPAY_KEY_ID,
-    keySecret: process.env.RAZORPAY_KEY_SECRET,
-    webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET,
-    enabled: process.env.RAZORPAY_ENABLED === 'true',
+    keyId: getEnvOptional('RAZORPAY_KEY_ID') ?? undefined,
+    keySecret: getEnvOptional('RAZORPAY_KEY_SECRET') ?? undefined,
+    webhookSecret: getEnvOptional('RAZORPAY_WEBHOOK_SECRET') ?? undefined,
+    enabled: getEnvOptional('RAZORPAY_ENABLED') === 'true',
   },
 
   cash: {
     // Auto-enabled when both Stripe and Razorpay are disabled.
     // Explicitly set CASH_ENABLED=true to force-enable alongside other providers.
-    enabled: process.env.CASH_ENABLED === 'true',
+    enabled: getEnvOptional('CASH_ENABLED') === 'true',
   },
 
   payment: {
-    attemptExpiryMinutes: parseInt(process.env.PAYMENT_ATTEMPT_EXPIRY_MINUTES ?? '15', 10),
-    maxRetryAttempts: parseInt(process.env.MAX_RETRY_ATTEMPTS ?? '3', 10),
-    idempotencyTtlSeconds: parseInt(process.env.PAYMENT_IDEMPOTENCY_TTL_SECONDS ?? '86400', 10),
+    attemptExpiryMinutes: parseInt(getEnvOptional('PAYMENT_ATTEMPT_EXPIRY_MINUTES') ?? '15', 10),
+    maxRetryAttempts: parseInt(getEnvOptional('MAX_RETRY_ATTEMPTS') ?? '3', 10),
+    idempotencyTtlSeconds: parseInt(
+      getEnvOptional('PAYMENT_IDEMPOTENCY_TTL_SECONDS') ?? '86400',
+      10,
+    ),
   },
 
   subscription: {
-    gracePeriodDays: parseInt(process.env.SUBSCRIPTION_GRACE_PERIOD_DAYS ?? '3', 10),
-    maxRetryAttempts: parseInt(process.env.SUBSCRIPTION_MAX_RETRY_ATTEMPTS ?? '3', 10),
-    retryIntervalHours: parseInt(process.env.SUBSCRIPTION_RETRY_INTERVAL_HOURS ?? '24', 10),
+    gracePeriodDays: parseInt(getEnvOptional('SUBSCRIPTION_GRACE_PERIOD_DAYS') ?? '3', 10),
+    maxRetryAttempts: parseInt(getEnvOptional('SUBSCRIPTION_MAX_RETRY_ATTEMPTS') ?? '3', 10),
+    retryIntervalHours: parseInt(getEnvOptional('SUBSCRIPTION_RETRY_INTERVAL_HOURS') ?? '24', 10),
   },
 
   queues: {
-    paymentConcurrency: parseInt(process.env.PAYMENT_QUEUE_CONCURRENCY ?? '5', 10),
-    refundConcurrency: parseInt(process.env.REFUND_QUEUE_CONCURRENCY ?? '3', 10),
-    subscriptionConcurrency: parseInt(process.env.SUBSCRIPTION_QUEUE_CONCURRENCY ?? '5', 10),
+    paymentConcurrency: parseInt(getEnvOptional('PAYMENT_QUEUE_CONCURRENCY') ?? '5', 10),
+    refundConcurrency: parseInt(getEnvOptional('REFUND_QUEUE_CONCURRENCY') ?? '3', 10),
+    subscriptionConcurrency: parseInt(getEnvOptional('SUBSCRIPTION_QUEUE_CONCURRENCY') ?? '5', 10),
   },
 
   features: {
-    multiCurrency: process.env.FEATURE_MULTI_CURRENCY === 'true',
-    failoverEnabled: process.env.FEATURE_FAILOVER_ENABLED !== 'false',
-    reconciliationEnabled: process.env.FEATURE_RECONCILIATION_ENABLED !== 'false',
-    reconciliationCron: process.env.RECONCILIATION_CRON ?? '0 2 * * *',
-    bullmqEnabled: process.env.BULLMQ_ENABLED !== 'false',
+    multiCurrency: getEnvOptional('FEATURE_MULTI_CURRENCY') === 'true',
+    failoverEnabled: getEnvOptional('FEATURE_FAILOVER_ENABLED') !== 'false',
+    reconciliationEnabled: getEnvOptional('FEATURE_RECONCILIATION_ENABLED') !== 'false',
+    reconciliationCron: getEnvOptional('RECONCILIATION_CRON') ?? '0 2 * * *',
+    bullmqEnabled: getEnvOptional('BULLMQ_ENABLED') !== 'false',
   },
 
   iam: {
     // URL of the auth/IAM service — used to fetch per-tenant platform settings.
-    // Example: http://localhost:4000
-    serviceUrl: process.env.IAM_SERVICE_URL ?? '',
+    // Example: http://localhost:3302
+    serviceUrl: getEnvOptional('IAM_SERVICE_URL') ?? '',
     // Optional API key for service-to-service calls (only needed if the IAM
     // service restricts its /settings/public endpoint in future).
-    serviceApiKey: process.env.IAM_SERVICE_API_KEY ?? '',
+    serviceApiKey: getEnvOptional('IAM_SERVICE_API_KEY') ?? '',
   },
 });

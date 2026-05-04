@@ -19,7 +19,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: config.jwtSecret,
+      // RS256 asymmetric verification when JWT_PUBLIC_KEY is set; HS256 fallback otherwise.
+      secretOrKey: config.jwtPublicKey ?? config.jwtSecret,
+      ...(config.jwtPublicKey ? { algorithms: ['RS256'] } : {}),
+      issuer: config.jwtIssuer,
+      audience: config.jwtAudience,
     });
   }
 

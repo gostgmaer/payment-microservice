@@ -23,6 +23,7 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Request, Response } from 'express';
 import { Prisma } from '@prisma/client';
 import { ERROR_CODES } from '../constants/error-codes.constant';
@@ -31,13 +32,15 @@ import { ERROR_CODES } from '../constants/error-codes.constant';
 export class GlobalExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(GlobalExceptionFilter.name);
 
+  constructor(private readonly configService: ConfigService) {}
+
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
 
     const correlationId = (request.headers['x-correlation-id'] as string) ?? 'unknown';
-    const isProduction = process.env.NODE_ENV === 'production';
+    const isProduction = this.configService.get<string>('app.env') === 'production';
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let errorCode: string = ERROR_CODES.INTERNAL_ERROR;

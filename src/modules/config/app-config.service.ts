@@ -28,7 +28,7 @@ export class AppConfigService {
 
   // ── Redis ────────────────────────────────────────────────────────────────
   get redisHost(): string {
-    return this.config.get<string>('redis.host', 'localhost');
+    return this.config.getOrThrow<string>('redis.host');
   }
   get redisPort(): number {
     return this.config.get<number>('redis.port', 6379);
@@ -42,9 +42,22 @@ export class AppConfigService {
 
   // ── JWT ──────────────────────────────────────────────────────────────────
   // This service only VERIFIES tokens — it never issues them.
-  // JWT_SECRET must match the signing secret of your external auth service.
+  // When JWT_PUBLIC_KEY is set, RS256 asymmetric verification is used.
+  // Falls back to HS256 JWT_SECRET when JWT_PUBLIC_KEY is absent.
   get jwtSecret(): string {
     return this.config.getOrThrow<string>('jwt.secret');
+  }
+
+  get jwtPublicKey(): string | undefined {
+    return this.config.get<string | undefined>('jwt.publicKey');
+  }
+
+  get jwtIssuer(): string {
+    return this.config.getOrThrow<string>('jwt.issuer');
+  }
+
+  get jwtAudience(): string {
+    return this.config.get<string>('jwt.audience', 'dashboard-app');
   }
 
   // ── Stripe ───────────────────────────────────────────────────────────────

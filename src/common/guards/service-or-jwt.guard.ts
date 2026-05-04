@@ -90,11 +90,16 @@ export class ServiceOrJwtGuard implements CanActivate {
     }
 
     const token = authHeader.slice(7);
+    const publicKey = this.config.get<string | undefined>('jwt.publicKey');
     const secret = this.config.get<string>('jwt.secret');
-    if (!secret) throw new UnauthorizedException('JWT secret not configured');
+    if (!publicKey && !secret) throw new UnauthorizedException('JWT secret not configured');
 
     try {
-      const payload = this.jwtService.verify<JwtPayload>(token, { secret });
+      // Prefer RS256 public key verification; fall back to HS256 shared secret.
+      const verifyOptions = publicKey
+        ? { secret: publicKey, algorithms: ['RS256'] as Array<'RS256'> }
+        : { secret: secret! };
+      const payload = this.jwtService.verify<JwtPayload>(token, verifyOptions);
       request.user = payload;
       return true;
     } catch {
