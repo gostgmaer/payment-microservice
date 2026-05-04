@@ -30,7 +30,13 @@ import {
   DefaultValuePipe,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
-import { TransactionStatus, RefundStatus, InvoiceStatus, SubscriptionStatus } from '@prisma/client';
+import {
+  TransactionStatus,
+  RefundStatus,
+  InvoiceStatus,
+  SubscriptionStatus,
+  Provider,
+} from '@prisma/client';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
@@ -323,10 +329,18 @@ export class AdminController {
     @Query('provider') provider?: string,
     @Query('processed') processed?: string,
   ) {
-    const where = {
-      ...(provider && { provider: provider as any }),
-      ...(processed !== undefined && { isProcessed: processed === 'true' }),
-    };
+    const where: {
+      provider?: Provider;
+      isProcessed?: boolean;
+    } = {};
+
+    const providerQuery = provider?.toUpperCase();
+    if (providerQuery === Provider.STRIPE || providerQuery === Provider.RAZORPAY) {
+      where.provider = providerQuery;
+    }
+    if (processed !== undefined) {
+      where.isProcessed = processed === 'true';
+    }
 
     const [data, total] = await Promise.all([
       this.prisma.webhookLog.findMany({

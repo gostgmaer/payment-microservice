@@ -11,7 +11,7 @@
  *  - Idempotent: same idempotencyKey returns existing refund.
  */
 
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { Prisma, Refund, RefundStatus, TransactionStatus } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { TransactionService } from '../transaction/transaction.service';

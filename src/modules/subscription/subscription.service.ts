@@ -29,7 +29,6 @@ import { AuditService } from '../audit/audit.service';
 import { AppConfigService } from '../config/app-config.service';
 import { IamSettingsService } from '../iam/iam-settings.service';
 import { ERROR_CODES } from '../../common/constants/error-codes.constant';
-import { generateIdempotencyKey } from '../../common/utils/crypto.util';
 import dayjs from 'dayjs';
 
 export interface CreateSubscriptionDto {

@@ -13,7 +13,7 @@
 import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
-import { QUEUE_NAMES, JOB_NAMES } from '../../../common/constants/queue-names.constant';
+import { QUEUE_NAMES } from '../../../common/constants/queue-names.constant';
 import { SubscriptionRenewalJobData } from '../interfaces/job-data.interface';
 import { SubscriptionService } from '../../subscription/subscription.service';
 

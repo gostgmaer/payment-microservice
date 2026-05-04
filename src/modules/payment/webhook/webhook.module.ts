@@ -8,7 +8,7 @@ import { SubscriptionModule } from '../../subscription/subscription.module';
 
 // PaymentOrchestratorModule is imported lazily via forwardRef to break
 // circular dependency (Orchestrator → Webhook → Orchestrator).
-import { forwardRef, Module as NestModule } from '@nestjs/common';
+import { forwardRef } from '@nestjs/common';
 import { PaymentOrchestratorModule } from '../orchestrator/payment-orchestrator.module';
 
 @Module({
