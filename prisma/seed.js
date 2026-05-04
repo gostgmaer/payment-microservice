@@ -34,7 +34,7 @@ async function main() {
         {
             id: "plan_easydev_starter_inr_monthly",
             tenantId: "easydev",
-            applicationId: "easydev-communication",
+            applicationId: "easydev-ai-communication",
             name: "EasyDev Starter Monthly (INR)",
             description: "Starter recurring billing via INR providers",
             amount: BigInt(199900),
@@ -47,7 +47,7 @@ async function main() {
         {
             id: "plan_easydev_growth_inr_monthly",
             tenantId: "easydev",
-            applicationId: "easydev-communication",
+            applicationId: "easydev-ai-communication",
             name: "EasyDev Growth Monthly (INR)",
             description: "Growth recurring billing via INR providers",
             amount: BigInt(499900),
@@ -60,7 +60,7 @@ async function main() {
         {
             id: "plan_easydev_business_inr_monthly",
             tenantId: "easydev",
-            applicationId: "easydev-communication",
+            applicationId: "easydev-ai-communication",
             name: "EasyDev Pay as you go Monthly (INR)",
             description: "Pay as you go recurring billing via INR providers",
             amount: BigInt(1299900),
