@@ -19,6 +19,13 @@ import {
   ValidationPipe,
   VersioningType,
 } from '@nestjs/common';
+
+// BigInt is not JSON-serializable by default — patch once at process start.
+// This converts BigInt values to strings in JSON responses (e.g. plan amounts).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(BigInt.prototype as any).toJSON = function () {
+  return this.toString();
+};
 import { ConfigService } from '@nestjs/config';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
