@@ -1,59 +1,11 @@
-version: '3.9'
+version: "3.9"
 
-# ─── Networks ──────────────────────────────────────────────────────────────
-networks:
-  payment-net:
-    driver: bridge
+# Local payment compose.
+# Uses shared easydev core infrastructure from the main easydev stack:
+# - PostgreSQL: core:5432
+# - Redis: redis:6379
 
-# ─── Volumes ───────────────────────────────────────────────────────────────
-volumes:
-  postgres_data:
-  redis_data:
-
-# ─── Services ──────────────────────────────────────────────────────────────
 services:
-
-  # ── PostgreSQL ────────────────────────────────────────────────────────────
-  postgres:
-    image: postgres:16-alpine
-    container_name: payment_postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: payment_user
-      POSTGRES_PASSWORD: payment_pass
-      POSTGRES_DB: payment_db
-      PGDATA: /var/lib/postgresql/data/pgdata
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - '5432:5432'
-    networks:
-      - payment-net
-    healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U payment_user -d payment_db']
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # ── Redis ─────────────────────────────────────────────────────────────────
-  redis:
-    image: redis:7-alpine
-    container_name: payment_redis
-    restart: unless-stopped
-    command: redis-server --requirepass ${REDIS_PASSWORD:-} --save 60 1 --loglevel warning
-    volumes:
-      - redis_data:/data
-    ports:
-      - '6379:6379'
-    networks:
-      - payment-net
-    healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
-      interval: 10s
-      timeout: 3s
-      retries: 5
-
-  # ── NestJS App ────────────────────────────────────────────────────────────
   app:
     build:
       context: .
@@ -63,26 +15,19 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://payment_user:payment_pass@postgres:5432/postgres?schema=payment
+      DATABASE_URL: postgresql://postgres:postgres@core:5432/postgres?schema=payment
       REDIS_HOST: redis
       REDIS_PORT: 6379
       NODE_ENV: development
       PORT: 4000
     ports:
-      - '4000:4000'
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      - "4000:4000"
     networks:
       - payment-net
       - easydev-net
-    # Run Prisma migrations on container start, then launch app
     command: >
       sh -c "npx prisma migrate deploy && node dist/main"
 
-  # ── BullMQ Worker (horizontally scalable, separate process) ───────────────
   worker:
     build:
       context: .
@@ -92,16 +37,17 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://payment_user:payment_pass@postgres:5432/postgres?schema=payment
+      DATABASE_URL: postgresql://postgres:postgres@core:5432/postgres?schema=payment
       REDIS_HOST: redis
       REDIS_PORT: 6379
       NODE_ENV: development
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
     networks:
       - payment-net
       - easydev-net
     command: node dist/worker
+
+networks:
+  payment-net:
+    driver: bridge
+  easydev-net:
+    external: true
