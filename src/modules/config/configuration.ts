@@ -7,13 +7,19 @@
 
 import { getEnvOptional, getEnvRequired } from './runtime-env';
 
-export default () => ({
+export default () => {
+  // Canonical RS256 verifier key for IAM access tokens.
+  // Keep legacy IAM_JWT_PUBLIC_KEY fallback for backward compatibility.
+  const iamJwtPublicKeyB64 =
+    getEnvOptional('JWT_PUBLIC_KEY') ?? getEnvOptional('IAM_JWT_PUBLIC_KEY');
+
+  return {
   app: {
     port: parseInt(getEnvOptional('PORT') ?? '3000', 10),
     env: getEnvOptional('NODE_ENV') ?? 'development',
     prefix: getEnvOptional('API_PREFIX') ?? 'api/v1',
     logLevel: getEnvOptional('LOG_LEVEL') ?? 'info',
-    structuredLoggingEnabled: getEnvOptional('ENABLE_PINO_LOGGING') === 'true',
+    structuredLoggingEnabled: (getEnvOptional('ENABLE_LOGGING') ?? getEnvOptional('ENABLE_PINO_LOGGING')) === 'true',
   },
 
   database: {
@@ -29,11 +35,11 @@ export default () => ({
 
   jwt: {
     // This service VERIFIES tokens issued by your external auth service.
-    // When JWT_PUBLIC_KEY (base64 SPKI PEM) is set the service uses RS256 asymmetric
-    // verification. Falls back to HS256 JWT_SECRET when JWT_PUBLIC_KEY is absent.
+    // When IAM_JWT_PUBLIC_KEY (or legacy JWT_PUBLIC_KEY) is set the service uses RS256 asymmetric
+    // verification. Falls back to HS256 JWT_SECRET when the public key is absent.
     secret: getEnvOptional('JWT_SECRET') ?? undefined,
-    publicKey: getEnvOptional('JWT_PUBLIC_KEY')
-      ? Buffer.from(getEnvOptional('JWT_PUBLIC_KEY')!, 'base64').toString('utf8')
+    publicKey: iamJwtPublicKeyB64
+      ? Buffer.from(iamJwtPublicKeyB64, 'base64').toString('utf8')
       : undefined,
     issuer: getEnvRequired('JWT_ISSUER'),
     audience: getEnvOptional('JWT_AUDIENCE') ?? 'dashboard-app',
@@ -97,4 +103,5 @@ export default () => ({
     // service restricts its /settings/public endpoint in future).
     serviceApiKey: getEnvOptional('IAM_SERVICE_API_KEY') ?? '',
   },
-});
+  };
+};

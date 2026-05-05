@@ -33,7 +33,7 @@ import { REDIS_CLIENT } from '../../common/interceptors/idempotency.interceptor'
       useFactory: (config: AppConfigService) => ({
         // Verification only — no signOptions needed since this service
         // never issues tokens; that is the responsibility of your auth service.
-        // RS256 when JWT_PUBLIC_KEY is set; HS256 fallback otherwise.
+        // RS256 when IAM_JWT_PUBLIC_KEY (or legacy JWT_PUBLIC_KEY) is set; HS256 fallback otherwise.
         ...(config.jwtPublicKey
           ? { publicKey: config.jwtPublicKey }
           : { secret: config.jwtSecret }),

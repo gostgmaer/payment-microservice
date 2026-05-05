@@ -19,13 +19,15 @@ import { AppConfigService } from './app-config.service';
           .valid('development', 'test', 'staging', 'production')
           .default('development'),
         PORT: Joi.number().default(3000),
-        ENABLE_PINO_LOGGING: Joi.string().valid('true', 'false').default('false'),
+        ENABLE_LOGGING: Joi.string().valid('true', 'false').default('true'),
+        ENABLE_PINO_LOGGING: Joi.string().valid('true', 'false').default('false'), // legacy alias for ENABLE_LOGGING
         LOG_LEVEL: Joi.string().default('info'),
         DATABASE_URL: Joi.string().required(),
         REDIS_HOST: Joi.string().required(),
         REDIS_PORT: Joi.number().default(6379),
         JWT_SECRET: Joi.string().min(32).required(),
         JWT_PUBLIC_KEY: Joi.string().allow('').optional(),
+        // IAM_JWT_PUBLIC_KEY: legacy alias for JWT_PUBLIC_KEY
         JWT_ISSUER: Joi.string().required(),
         JWT_AUDIENCE: Joi.string().optional(),
         STRIPE_ENABLED: Joi.string().valid('true', 'false').default('false'),

@@ -42,8 +42,9 @@ export class AppConfigService {
 
   // ── JWT ──────────────────────────────────────────────────────────────────
   // This service only VERIFIES tokens — it never issues them.
-  // When JWT_PUBLIC_KEY is set, RS256 asymmetric verification is used.
-  // Falls back to HS256 JWT_SECRET when JWT_PUBLIC_KEY is absent.
+  // When IAM_JWT_PUBLIC_KEY (or legacy JWT_PUBLIC_KEY) is set,
+  // RS256 asymmetric verification is used.
+  // Falls back to HS256 JWT_SECRET when no public key is configured.
   get jwtSecret(): string {
     return this.config.getOrThrow<string>('jwt.secret');
   }
