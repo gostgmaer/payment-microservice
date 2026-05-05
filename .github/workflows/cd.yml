@@ -445,9 +445,9 @@ jobs:
             set -euo pipefail
 
             DEPLOY_DIR="/home/opc/easydev-backends/deploy/oracle-vm"
-            DEPLOY_ENV="${DEPLOY_DIR}/.env.core"
+            CORE_ENV="${DEPLOY_DIR}/.env.core"
             CONTAINER="easydev-payment-service"
-            BACKUP_REF="$(grep '^PAYMENT_IMAGE_BACKUP=' "$DEPLOY_ENV" 2>/dev/null | tail -n 1 | cut -d= -f2- || true)"
+            BACKUP_REF="$(grep '^PAYMENT_IMAGE_BACKUP=' "$CORE_ENV" 2>/dev/null | tail -n 1 | cut -d= -f2- || true)"
 
             cleanup_repo_keep_current_and_backup() {
               local container_name="$1"
